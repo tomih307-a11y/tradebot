@@ -2,7 +2,10 @@
 so a missing key fails loudly instead of silently using a hidden number."""
 from __future__ import annotations
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:          # Python < 3.11
+    import tomli as tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
