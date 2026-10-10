@@ -65,8 +65,9 @@ filter_4h_slope = false
 filter_btc = false
 
 [pmo_zero_cross.backtest]
-start = "2025-01-01T00:00:00Z"
-end = "2025-09-30T00:00:00Z"
+# MEXC تحتفظ بشموع 15 دقيقة لنحو 6 أشهر فقط (الساعة و4 ساعات أطول). اختر فترة ضمن آخر ~170 يوماً.
+start = "2026-04-20T00:00:00Z"
+end = "2026-10-09T00:00:00Z"
 # symbols = [...]                  # اختياري: يتجاوز trading.symbols في الباكتست فقط
 slippage_pct = 0.02
 slippage_on_stop = false           # الوقف يُنفَّذ بسعره (أو بالافتتاح عند الفجوة) دون انزلاق

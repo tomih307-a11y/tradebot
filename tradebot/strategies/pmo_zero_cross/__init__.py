@@ -18,7 +18,7 @@ def run_backtest_cli(cfg, args) -> None:
     feats, btc = load_features(cfg, client, symbols, start, end)
     if not feats:
         raise SystemExit("No candles were downloaded for any symbol (check network access to MEXC / dates / symbols).")
-    print(f"loaded {len(feats)} symbols: " + ", ".join(f"{k}={len(v.ts)} bars" for k, v in sorted(feats.items())))
+    print(f"loaded {len(feats)} symbols: " + ", ".join(f"{k}={len(v.ts)} bars from {int(v.ts[0])}" for k, v in sorted(feats.items())))
     funding = {s: get_funding(client, bt.data_dir, s, refresh=True) for s in feats} if bt.use_mexc_funding_history else {}
 
     def run(c):
