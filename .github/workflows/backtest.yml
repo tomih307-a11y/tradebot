@@ -22,6 +22,21 @@ jobs:
         run: python -m pytest tests -q 2>&1 | tee reports/tests.txt
       - name: Check MEXC reachability
         run: curl -sS -m 20 -w "\nHTTP %{http_code}\n" https://contract.mexc.com/api/v1/contract/ping 2>&1 | tee reports/ping.txt || true
+      - name: Diagnose kline download
+        run: |
+          python - <<'PY' 2>&1 | tee reports/diag.txt
+          import time, json, urllib.request
+          now = int(time.time())
+          for tf, step in (("Min15", 900), ("Min60", 3600), ("Hour4", 14400)):
+              url = f"https://contract.mexc.com/api/v1/contract/kline/BTC_USDT?interval={tf}&start={now-200*step}&end={now}"
+              raw = urllib.request.urlopen(url, timeout=20).read().decode()
+              d = json.loads(raw)
+              data = d.get("data") or {}
+              print(tf, "success=", d.get("success"), "code=", d.get("code"), "keys=", sorted(data.keys()),
+                    "n=", len(data.get("time", [])), "first=", (data.get("time") or [None])[0], "last=", (data.get("time") or [None])[-1])
+              print("  raw head:", raw[:200])
+          PY
+        continue-on-error: true
       - name: Backtest on real MEXC data
         run: python -m tradebot backtest 2>&1 | tee reports/run.log
         continue-on-error: true
