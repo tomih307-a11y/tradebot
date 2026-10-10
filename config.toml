@@ -1,0 +1,93 @@
+# ═══════════════════════════════════════════════════════════════
+# إعدادات tradebot — كل الأرقام هنا، ولا شيء ثابت داخل الكود.
+# ═══════════════════════════════════════════════════════════════
+
+[general]
+strategy = "pmo_zero_cross"        # الاستراتيجية المختارة (انظر tradebot/strategies/__init__.py)
+log_level = "INFO"
+
+[mexc]
+base_url = "https://contract.mexc.com"
+api_key_env = "MEXC_API_KEY"       # أسماء متغيرات البيئة التي تحمل المفاتيح
+api_secret_env = "MEXC_API_SECRET"
+request_timeout_sec = 15
+max_retries = 3
+kline_page_limit = 2000            # أقصى عدد شموع في طلب واحد
+
+# ───────── إعدادات التداول المشتركة (تحترمها الاستراتيجية كما هي) ─────────
+[trading]
+dry_run = true                     # DRY_RUN: لا أوامر حقيقية عند true
+trade_size_usdt = 20.0             # الهامش (margin) لكل صفقة بالـ USDT
+max_open_trades = 5                # الحد الأقصى للصفقات المفتوحة
+leverage = 5
+margin_type = "isolated"           # isolated | cross
+stop_loss_pct = 3.0                # وقف الخسارة الابتدائي كنسبة مئوية من سعر الدخول (على السعر وليس الهامش)
+taker_fee_pct = 0.04               # رسوم Taker لكل جهة (دخول أو خروج) — تحقق منها من حسابك على MEXC
+btc_symbol = "BTC_USDT"
+symbols = ["BTC_USDT", "ETH_USDT", "SOL_USDT", "XRP_USDT", "DOGE_USDT", "BNB_USDT", "ADA_USDT", "AVAX_USDT"]
+
+# ───────── استراتيجية: تسلسل عبور الصفر لـ PMO ─────────
+[pmo_zero_cross]
+tf_entry = "Min15"
+tf_1h = "Min60"
+tf_4h = "Hour4"
+
+[pmo_zero_cross.indicator]
+roc_smooth_len = 35                # csf(roc, 35)
+roc_scale = 10                     # 10 × csf(roc,35)
+pmo_smooth_len = 20                # csf(..., 20)
+signal_len = 10                    # EMA(PMO, 10)
+warmup_bars = 300                  # تجاهل أول N شمعة من كل فريم
+atr_len = 14
+
+[pmo_zero_cross.exits]             # مفاتيح تشغيل/إيقاف شروط الفشل
+fail_1h_slope = true               # WAIT_1H: شمعة ساعة مغلقة بـ SLOPE_1H < 0
+fail_1h_pmo15_back = true          # WAIT_1H: PMO_15 يعود تحت الصفر
+fail_1h_timeout = true             # WAIT_1H: مرور MAX_WAIT_1H شمعة 15د دون عبور
+max_wait_1h = 16
+fail_4h_slope = true               # WAIT_4H: شمعة 4س مغلقة بـ SLOPE_4H < 0
+fail_4h_pmo1h_back = true          # WAIT_4H: PMO_1H يعود تحت الصفر
+
+[pmo_zero_cross.trail]
+mult_1 = 3.0                       # بعد عبور الساعة:      ATR_15 × mult_1
+mult_2 = 2.0                       # بعد عبور الـ4 ساعات:  ATR_1H × mult_2
+mult_3 = 1.5                       # ضعف زخم داخل RIDE:    ATR_15 × mult_3
+# نقطة التعادل لا تُطبَّق إلا إذا كان السعر الحالي تجاوزها (وإلا تقع فوق السعر في اللونق وتُضرب في الشمعة التالية).
+# false = التطبيق الحرفي دائماً.
+breakeven_requires_protective = true
+
+[pmo_zero_cross.filters]           # كلها مطفأة افتراضياً
+filter_1h_slope = false
+filter_1h_signal = false
+filter_eta_max = false
+eta_max_value = 4.0                # بعدد شموع الساعة (يُستخدم فقط إذا filter_eta_max = true)
+filter_4h_slope = false
+filter_btc = false
+
+[pmo_zero_cross.backtest]
+start = "2025-01-01T00:00:00Z"
+end = "2025-09-30T00:00:00Z"
+# symbols = [...]                  # اختياري: يتجاوز trading.symbols في الباكتست فقط
+slippage_pct = 0.02
+slippage_on_stop = false           # الوقف يُنفَّذ بسعره (أو بالافتتاح عند الفجوة) دون انزلاق
+funding_interval_hours = 8
+funding_fixed_pct = 0.01           # يُستخدم عند غياب بيانات MEXC التاريخية (% لكل فترة تمويل)
+use_mexc_funding_history = true
+split_selection_pct = 70           # 70% اختيار / 30% تحقق (حسب الزمن)
+min_sample = 30                    # أقل من هذا = "عينة غير كافية"
+eta_buckets = [0, 2, 4, 8]         # شرائح ETA_1H: 0–2، 2–4، 4–8، 8+، ثم لا نهائي
+sweep_mult_1 = [2.0, 2.5, 3.0, 4.0]
+sweep_mult_2 = [1.5, 2.0, 3.0]
+sweep_mult_3 = [1.0, 1.5, 2.0]
+liquidity_window_bars = 96         # سيولة 24 ساعة = مجموع قيمة التداول لآخر 96 شمعة 15د
+data_dir = "data/cache"
+reports_dir = "reports"
+
+[pmo_zero_cross.live]
+close_margin_sec = 5               # هامش ثوانٍ بعد إغلاق الشمعة لضمان اكتمالها
+history_bars = 700                 # عدد الشموع المجلوبة لكل فريم في كل دورة
+state_file = "state/pmo_zero_cross_state.json"
+cells_file = "reports/last_backtest_cells.json"   # نسب العبور التاريخية للتنبيهات
+min_quote_volume_24h = 0           # تجاهل عملات سيولتها أقل من هذا (0 = معطل)
+telegram_token_env = "TELEGRAM_BOT_TOKEN"
+telegram_chat_id_env = "TELEGRAM_CHAT_ID"
