@@ -1,0 +1,36 @@
+name: backtest-pmo
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: ["tradebot/**", "config.toml", "tests/**", ".github/workflows/backtest.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Tests
+        run: python -m pytest tests -q 2>&1 | tee reports/tests.txt
+      - name: Check MEXC reachability
+        run: curl -sS -m 20 -w "\nHTTP %{http_code}\n" https://contract.mexc.com/api/v1/contract/ping 2>&1 | tee reports/ping.txt || true
+      - name: Backtest on real MEXC data
+        run: python -m tradebot backtest 2>&1 | tee reports/run.log
+        continue-on-error: true
+      - name: Publish results to branch backtest-results
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b backtest-results
+          git config user.name "backtest-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "backtest results" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin backtest-results
