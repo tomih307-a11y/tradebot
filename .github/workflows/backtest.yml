@@ -37,6 +37,27 @@ jobs:
               print("  raw head:", raw[:200])
           PY
         continue-on-error: true
+      - name: Diagnose history depth
+        run: |
+          python - <<'PY' 2>&1 | tee reports/diag2.txt
+          import time, json, urllib.request, datetime
+          now = int(time.time())
+          def get(tf, a, b):
+              url = f"https://contract.mexc.com/api/v1/contract/kline/BTC_USDT?interval={tf}&start={a}&end={b}"
+              try:
+                  d = json.loads(urllib.request.urlopen(url, timeout=30).read().decode())
+              except Exception as e:
+                  return f"ERR {e}"
+              t = (d.get("data") or {}).get("time", [])
+              return f"n={len(t)} first={datetime.datetime.utcfromtimestamp(t[0]) if t else None} msg={d.get('message')}"
+          for tf, step in (("Min15", 900), ("Min60", 3600), ("Hour4", 14400)):
+              for days in (30, 90, 180, 365, 540, 700):
+                  a = now - days * 86400
+                  print(tf, f"{days}d ago, 1-day window:", get(tf, a, a + 86400))
+              print(tf, "2000-bar window ending now:", get(tf, now - 2000 * step, now))
+              print(tf, "3000-bar window ending now:", get(tf, now - 3000 * step, now))
+          PY
+        continue-on-error: true
       - name: Backtest on real MEXC data
         run: python -m tradebot backtest 2>&1 | tee reports/run.log
         continue-on-error: true
