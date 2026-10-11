@@ -18,16 +18,30 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
+      - name: Restore downloaded candles (speeds up reruns)
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: mexc-candles-${{ github.run_id }}
+          restore-keys: mexc-candles-
       - name: Backtest, all MEXC USDT perpetuals, project limits (max open trades as configured)
         run: python -m tradebot backtest --symbols all --out reports/all_limited 2>&1 | tee reports/run_limited.log
         continue-on-error: true
       - name: Backtest, same coins, NO limit on open trades (signal quality on thousands of trades)
         run: python -m tradebot backtest --symbols all --max-open 100000 --out reports/all_unlimited 2>&1 | tee reports/run_unlimited.log
         continue-on-error: true
+      - name: Keep a backup copy of the results as a workflow artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-symbols-results
+          path: reports/
+          retention-days: 14
       - name: Publish results to branch backtest-results-all
         if: always()
         run: |
           mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
+          find /tmp/out -name '*.csv' -size +20M -exec gzip -f {} \;      # GitHub rejects files over 100 MB
           cd /tmp/out && git init -q && git checkout -q -b backtest-results-all
           git config user.name "backtest-bot" && git config user.email "bot@example.com"
           git add -A && git commit -q -m "all-symbols backtest results" || true
