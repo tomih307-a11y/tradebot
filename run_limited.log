@@ -1,0 +1,62 @@
+MEXC USDT perpetual contracts: 1088
+  downloaded 50/1088 symbols
+  downloaded 100/1088 symbols
+  downloaded 150/1088 symbols
+  downloaded 200/1088 symbols
+  downloaded 250/1088 symbols
+  downloaded 300/1088 symbols
+  downloaded 350/1088 symbols
+  downloaded 400/1088 symbols
+Traceback (most recent call last):
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/http/client.py", line 603, in _get_chunk_left
+    chunk_left = self._read_next_chunk_size()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/http/client.py", line 561, in _read_next_chunk_size
+    return int(line, 16)
+           ^^^^^^^^^^^^^
+ValueError: invalid literal for int() with base 16: b''
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/http/client.py", line 621, in _read_chunked
+    while (chunk_left := self._get_chunk_left()) is not None:
+                         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/http/client.py", line 605, in _get_chunk_left
+    raise IncompleteRead(b'')
+http.client.IncompleteRead: IncompleteRead(0 bytes read)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/runner/work/tradebot/tradebot/tradebot/__main__.py", line 3, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/runner/work/tradebot/tradebot/tradebot/cli.py", line 63, in main
+    (strat.run_backtest_cli if args.cmd == "backtest" else strat.run_live_cli)(cfg, args)
+  File "/home/runner/work/tradebot/tradebot/tradebot/strategies/pmo_zero_cross/__init__.py", line 26, in run_backtest_cli
+    feats, btc = load_features(cfg, client, symbols, start, end)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/tradebot/tradebot/tradebot/strategies/pmo_zero_cross/backtest.py", line 76, in load_features
+    k[key] = get_klines(client, data_dir, sym, tf, t0, end_ts, now=now)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/tradebot/tradebot/tradebot/data/klines.py", line 102, in get_klines
+    new = drop_unclosed(fetch_range(client, symbol, tf, need_from, end), tf, now)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/tradebot/tradebot/tradebot/data/klines.py", line 81, in fetch_range
+    parts.append(_from_raw(client.klines(symbol, tf, cur, stop)))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/tradebot/tradebot/tradebot/mexc/client.py", line 88, in klines
+    d = self._request("GET", f"/api/v1/contract/kline/{symbol}",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/tradebot/tradebot/tradebot/mexc/client.py", line 74, in _request
+    out = json.loads(r.read().decode())
+                     ^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/http/client.py", line 488, in read
+    return self._read_chunked(amt)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/http/client.py", line 633, in _read_chunked
+    raise IncompleteRead(b''.join(value)) from exc
+http.client.IncompleteRead: IncompleteRead(151273 bytes read)
