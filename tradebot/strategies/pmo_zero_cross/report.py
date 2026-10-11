@@ -86,9 +86,17 @@ TABLE_HEAD = ("| الخلية | الصفقات | عبور الساعة | عبو�
               "MFE % | MAE % | المدة (ساعة) | MFE المحتفظ | ملاحظة |\n|---|---|---|---|---|---|---|---|---|---|---|---|")
 
 
-# ───────────── grouping keys ─────────────
-def key_h1(t):   return f"{t.snap['h1']['pos']}|{t.snap['h1']['slope_dir']}"
-def key_h4(t):   return f"{t.snap['h4']['pos']}|{t.snap['h4']['slope_dir']}"
+# ───────────── grouping keys (slope = level 1, position = level 2) ─────────────
+SLOPE_CLASSES = ["with|with", "with|against", "against|with", "against|against"]
+POS_PAIRS = [(a, b) for a in ("above", "below") for b in ("above", "below")]
+
+
+def key_main(t):
+    return t.snap["slope_class"]
+
+
+def key_sub(t):
+    return f"{t.snap['slope_class']}|{t.snap['h1']['pos']}|{t.snap['h4']['pos']}"
 
 
 def eta_label(eta, edges):
@@ -107,15 +115,37 @@ def eta_labels(edges):
 def cell_tables(trades, cfg):
     bt = cfg.pmo_zero_cross.backtest
     sl, ms, edges = cfg.trading.stop_loss_pct, bt.min_sample, list(bt.eta_buckets)
-    pos_slope = [f"{p}|{d}" for p in ("above", "below") for d in ("with", "against")]
-    groups = {
-        "h1": (key_h1, pos_slope), "h4": (key_h4, pos_slope),
-        "eta": (lambda t: eta_label(t.snap["h1"]["eta"], edges), eta_labels(edges)),
-    }
-    out = {}
-    for name, (fn, labels) in groups.items():
-        out[name] = {lab: stats([t for t in trades if fn(t) == lab], sl, ms) for lab in labels}
-    return out
+    main = {c: stats([t for t in trades if key_main(t) == c], sl, ms) for c in SLOPE_CLASSES}
+    sub = {f"{c}|{p1}|{p4}": stats([t for t in trades if key_sub(t) == f"{c}|{p1}|{p4}"], sl, ms)
+           for c in SLOPE_CLASSES for p1, p4 in POS_PAIRS}
+    eta = {lab: stats([t for t in trades if eta_label(t.snap["h1"]["eta"], edges) == lab], sl, ms)
+           for lab in eta_labels(edges)}
+    return {"main": main, "sub": sub, "eta": eta}
+
+
+def eta_accuracy(trades):
+    """Expected ETA_1H at entry vs actual 1H-crossing time (both in 1H candles). Only trades that had a
+    finite ETA at entry AND whose 1H actually crossed can be scored."""
+    rows = [(t.snap["h1"]["eta"], t.h1_cross_bars / 4.0) for t in trades
+            if t.initial_stage == M.WAIT_1H and t.h1_cross_bars is not None and not math.isinf(t.snap["h1"]["eta"])]
+    n_fin = sum(1 for t in trades if t.initial_stage == M.WAIT_1H and not math.isinf(t.snap["h1"]["eta"]))
+    if not rows:
+        return {"n": 0, "n_finite": n_fin}
+    err = [actual - eta for eta, actual in rows]               # + = crossed later than predicted
+    return {"n": len(rows), "n_finite": n_fin, "mean_err": sum(err) / len(err), "median_err": st.median(err),
+            "mean_abs_err": sum(abs(e) for e in err) / len(err), "median_abs_err": st.median([abs(e) for e in err])}
+
+
+def phase_distribution(trades):
+    names = ["WAIT_1H (الدخول→عبور الساعة)", "WAIT_4H (عبور الساعة→عبور الـ4س)", "RIDE (عبور الـ4س→الخروج)"]
+    out = []
+    tot = sum(sum(t.phase_moves) for t in trades) if trades else 0.0
+    for k in range(3):
+        mv = sum(t.phase_moves[k] for t in trades)
+        mfes = [t.phase_mfe[k] for t in trades if t.phase_mfe[k] is not None]
+        out.append({"name": names[k], "sum": mv, "share": (mv / tot) if tot else None,
+                    "avg_mfe": _mean(mfes), "n_mfe": len(mfes)})
+    return out, tot
 
 
 # ───────────── CSV ─────────────
@@ -128,7 +158,16 @@ def trade_row(t: Trade) -> dict:
         "fail_detail": t.fail_detail or "", "initial_stage": t.initial_stage, "max_stage": t.max_stage,
         "h1_cross_bars": "" if t.h1_cross_bars is None else t.h1_cross_bars,
         "h4_cross_bars": "" if t.h4_cross_bars is None else t.h4_cross_bars,
-        "transitions": "|".join(f"{a}:{b}" for a, b in t.transitions),
+        "transitions": "|".join(f"{a}:{b}@{p}" for a, b, p in t.transitions),
+        "h1_cross_price": "" if t.h1_cross_price is None else t.h1_cross_price,
+        "h4_cross_price": "" if t.h4_cross_price is None else t.h4_cross_price,
+        "wait_deadline_final": "" if t.wait_deadline is None else t.wait_deadline,
+        "wait_deadline_log": "|".join(f"{b}->{d}" for b, d in t.deadline_log),
+        "slope_class": t.snap["slope_class"], "n_slopes_with": t.snap["n_slopes_with"],
+        "phase1_move_pct": t.phase_moves[0], "phase2_move_pct": t.phase_moves[1], "phase3_move_pct": t.phase_moves[2],
+        "phase1_mfe_pct": "" if t.phase_mfe[0] is None else t.phase_mfe[0],
+        "phase2_mfe_pct": "" if t.phase_mfe[1] is None else t.phase_mfe[1],
+        "phase3_mfe_pct": "" if t.phase_mfe[2] is None else t.phase_mfe[2],
         "bars_held": t.bars_held, "initial_stop": t.initial_stop, "final_stop": t.stop,
         "stop_stage": t.stop_stage, "n_stop_moves": t.n_stop_moves,
         "mfe_pct": t.mfe_pct, "mae_pct": t.mae_pct, "mfe_retained": "" if t.mfe_retained is None else t.mfe_retained,
@@ -184,6 +223,7 @@ def write_report(cfg, run_fn, base_engine, start_ts, end_ts, out_dir, symbols=No
     L.append(f"- حد التقسيم ({bt.split_selection_pct}% اختيار / {100 - bt.split_selection_pct}% تحقق): {iso(split_ts)} (حسب وقت الدخول)")
     L.append(f"- العملات: {', '.join(sorted(symbols if symbols is not None else {t.symbol for t in base_engine.closed}))}")
     L.append(f"- الرسوم/جهة: {cfg.trading.taker_fee_pct}% · الانزلاق: {bt.slippage_pct}% · وقف ابتدائي: {sl}%")
+    L.append(f"- المهلة: min={s.exits.min_wait_1h} شمعة · ETA×{s.exits.wait_eta_mult} · سقف={s.exits.max_wait_1h_cap} شمعة · مفعّلة={s.exits.fail_1h_timeout}")
     L.append(f"- صفقات مغلقة قسراً بنهاية البيانات (مستبعدة من الإحصاءات): {len(eod)}")
     rej = {}
     for r in base_engine.rejected:
@@ -208,48 +248,79 @@ def write_report(cfg, run_fn, base_engine, start_ts, end_ts, out_dir, symbols=No
         L.append(f"  - الصفقات التي بدأت قبل RIDE ({len(b)}): عبرت الـ4س {_f(len(c4) / len(b) if b else None, pct=True)}، "
                  f"شموع 15د من الدخول حتى العبور: متوسط {_f(_mean(c4), 1)} · وسيط {_f(_median(c4), 1)}")
 
+    L.append("\n## دقة ETA_1H (المتوقع لحظة الدخول مقابل الفعلي، بشموع الساعة؛ + = عبرت متأخرة عن التوقع)\n")
+    L.append("| المجموعة | صفقات ETA منتهٍ | عبرت فعلاً | متوسط الخطأ | وسيط الخطأ | متوسط |الخطأ| | وسيط |الخطأ| |\n|---|---|---|---|---|---|---|")
+    for lab, grp in (("الكل", trades), ("اختيار", sel), ("تحقق", val)):
+        e = eta_accuracy(grp)
+        L.append(f"| {lab} | {e['n_finite']} | {e['n']} | {_f(e.get('mean_err'))} | {_f(e.get('median_err'))} | "
+                 f"{_f(e.get('mean_abs_err'))} | {_f(e.get('median_abs_err'))} |")
+    L.append("\n(الصفقات التي خرجت قبل العبور لا يمكن تقييم ETA لها، فالمقياس متحيز نحو العبور السريع.)")
+
+    L.append("\n## توزيع الربح على المراحل (حركة السعر لصالح الصفقة، % من سعر الدخول)\n")
+    L.append("| المجموعة | المرحلة | مجموع الحركة % | نسبتها من الإجمالي | متوسط MFE في المرحلة % | صفقات دخلت المرحلة |\n|---|---|---|---|---|---|")
+    for lab, grp in (("الكل", trades), ("اختيار", sel), ("تحقق", val)):
+        dist, tot = phase_distribution(grp)
+        for d in dist:
+            L.append(f"| {lab} | {d['name']} | {_f(d['sum'])} | {_f(d['share'], pct=True)} | {_f(d['avg_mfe'], 3)} | {d['n_mfe']} |")
+        L.append(f"| {lab} | الإجمالي | {_f(tot)} | | | |")
+
     L.append("\n## العائد حسب أعلى مرحلة وصلتها الصفقة\n")
     L.append(TABLE_HEAD)
     for lab, st_ in (("فشل عند WAIT_1H", M.WAIT_1H), ("فشل عند WAIT_4H", M.WAIT_4H), ("وصل RIDE", M.RIDE)):
         L.append(_row(lab, stats([t for t in trades if t.max_stage == st_], sl, ms)))
 
-    L.append("\n## الجداول حسب الحالة الابتدائية\n")
-    names = {"h1": "موقع الساعة × ميلها (بالنسبة لاتجاه الصفقة)", "h4": "موقع الـ4 ساعات × ميلها", "eta": "شرائح ETA_1H (شموع ساعة)"}
+    L.append("\n## الجداول حسب الحالة الابتدائية (المستوى الأول: ميل الساعة | ميل الـ4س)\n")
     for lab, grp in (("الاختيار", sel), ("التحقق", val)):
         tabs = cell_tables(grp, cfg)
-        for k in ("h1", "h4", "eta"):
-            L.append(f"\n### {names[k]} — {lab}\n")
-            L.append(TABLE_HEAD)
-            for cell, sv in tabs[k].items():
-                L.append(_row(cell, sv))
+        L.append(f"\n### الجدول الرئيسي: ميل الساعة × ميل الـ4س — {lab}\n")
+        L.append(TABLE_HEAD)
+        for cell in SLOPE_CLASSES:
+            L.append(_row(f"**{cell}**", tabs["main"][cell]))
+            for p1, p4 in POS_PAIRS:                                  # level 2: position of 1H / 4H vs zero
+                L.append(_row(f"&nbsp;&nbsp;↳ موقع الساعة {p1} · الـ4س {p4}", tabs["sub"][f"{cell}|{p1}|{p4}"]))
+        L.append(f"\n### شرائح ETA_1H (شموع ساعة) — {lab}\n")
+        L.append(TABLE_HEAD)
+        for cell, sv in tabs["eta"].items():
+            L.append(_row(cell, sv))
+    L.append("\n(with = الميل مع اتجاه الصفقة، against = ضده؛ above = في جهة الصفقة من الصفر)")
 
     L.append("\n## سبب الخروج\n")
     L.append(TABLE_HEAD)
-    for r in M.EXIT_REASONS[:-1]:
+    for r in (M.STOP_INITIAL, M.STOP_TRAIL_1, M.STOP_TRAIL_2, M.STOP_TRAIL_3):
         L.append(_row(f"{M.REASON_AR[r]} ({r})", stats([t for t in trades if t.exit_reason == r], sl, ms)))
+    for det, ar in (("1h_slope", "ميل الساعة"), ("pmo15_back", "عودة PMO_15"), ("timeout", "مهلة")):
+        L.append(_row(f"فشل الساعة — {ar}", stats([t for t in trades if t.exit_reason == M.FAIL_1H and t.fail_detail == det], sl, ms)))
+    L.append(_row("فشل الـ4 ساعات", stats([t for t in trades if t.exit_reason == M.FAIL_4H], sl, ms)))
     L.append("\n(عمود «MFE المحتفظ» = مجموع العائد الإجمالي عند الخروج ÷ مجموع أقصى ربح وصلته الصفقات؛ القيمة لكل صفقة في CSV)")
 
-    # sweeps
+    # ───────── sweeps ─────────
     base_sel = stats(sel, sl, ms).get("avg_ret", -1e9) if sel else -1e9
+
+    def variant(label, **over):
+        eng = run_fn(_override(cfg, **over))
+        a, b = split_trades(valid(eng.closed), split_ts)
+        return _variant_line(label, stats(a, sl, ms), stats(b, sl, ms), base_sel, ms)
+
     L.append("\n## مقارنة مضاعفات الوقف المتحرك (متغير واحد في كل مرة)\n")
     for key, vals in (("mult_1", bt.sweep_mult_1), ("mult_2", bt.sweep_mult_2), ("mult_3", bt.sweep_mult_3)):
         L.append(f"\n### TRAIL_{key.upper()}\n")
         L.append(VARIANT_HEAD)
         for v in vals:
-            eng = run_fn(_override(cfg, ("pmo_zero_cross", "trail", key), v))
-            t_ = valid(eng.closed)
-            a, b = split_trades(t_, split_ts)
-            L.append(_variant_line(f"{v}" + (" (الحالي)" if v == s.trail.get(key) else ""),
-                                   stats(a, sl, ms), stats(b, sl, ms), base_sel, ms))
+            L.append(variant(f"{v}" + (" (الحالي)" if v == s.trail.get(key) else ""),
+                             **{f"pmo_zero_cross.trail.{key}": v}))
+
+    L.append("\n## مقارنة المهلة (WAIT_ETA_MULT)\n")
+    L.append(VARIANT_HEAD)
+    for v in bt.sweep_wait_eta_mult:
+        L.append(variant(f"WAIT_ETA_MULT={v}" + (" (الحالي)" if v == s.exits.wait_eta_mult and s.exits.fail_1h_timeout else ""),
+                         **{"pmo_zero_cross.exits.wait_eta_mult": v, "pmo_zero_cross.exits.fail_1h_timeout": True}))
+    L.append(variant("بدون مهلة (الخروج بالميل فقط)", **{"pmo_zero_cross.exits.fail_1h_timeout": False}))
 
     L.append("\n## أثر الفلاتر (مع الفلتر مقابل بدونه)\n")
     L.append(VARIANT_HEAD)
     L.append(_variant_line("بدون فلاتر (الأساس)", stats(sel, sl, ms), stats(val, sl, ms), base_sel, ms))
     for fl in FILTERS:
-        eng = run_fn(_override(cfg, ("pmo_zero_cross", "filters", fl), True))
-        t_ = valid(eng.closed)
-        a, b = split_trades(t_, split_ts)
-        L.append(_variant_line(fl.upper(), stats(a, sl, ms), stats(b, sl, ms), base_sel, ms))
+        L.append(variant(fl.upper(), **{f"pmo_zero_cross.filters.{fl}": True}))
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -260,16 +331,18 @@ def write_report(cfg, run_fn, base_engine, start_ts, end_ts, out_dir, symbols=No
         w.writerow(["time", "symbol", "side", "reason"])
         for r in base_engine.rejected:
             w.writerow([iso(r["ts"] + 900), r["symbol"], r["side"], r["reason"]])
-    cells = cell_tables(trades, cfg)
-    (out / "last_backtest_cells.json").write_text(json.dumps(cells, indent=1, sort_keys=True), encoding="utf-8")
+    (out / "last_backtest_cells.json").write_text(json.dumps(cell_tables(trades, cfg), indent=1, sort_keys=True), encoding="utf-8")
     return {"report": str(out / "pmo_report.md"), "trades": len(trades)}
 
 
-def _override(cfg, path, value):
-    d = cfg.to_dict()
-    cur = d
-    for p in path[:-1]:
-        cur = cur[p]
-    cur[path[-1]] = value
+def _override(cfg, **kw):
+    """_override(cfg, **{"pmo_zero_cross.trail.mult_1": 2.0})"""
     from tradebot.config import Section
+    d = cfg.to_dict()
+    for path, value in kw.items():
+        cur = d
+        parts = path.split(".")
+        for p in parts[:-1]:
+            cur = cur[p]
+        cur[parts[-1]] = value
     return Section(d, "root")

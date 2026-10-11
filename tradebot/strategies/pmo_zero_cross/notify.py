@@ -46,11 +46,23 @@ class Notifier:
                 log.warning("telegram send failed: %s", e)
 
     def hist_rate(self, tr) -> str:
-        c = self.cells.get("h1", {}).get(f"{tr.snap['h1']['pos']}|{tr.snap['h1']['slope_dir']}")
-        if not c or not c.get("n"):
-            return "غير متوفرة (لا يوجد باكتست)"
-        warn = " (عينة غير كافية)" if c["n"] < self.min_sample else ""
-        return f"{c['h1_rate'] * 100:.1f}% من {c['n']} صفقة{warn}"
+        """Historical 1H-cross rate of the same state cell: level 2 (slope+position) if it has enough
+        samples, otherwise level 1 (slope only)."""
+        sn = tr.snap
+        k1 = sn["slope_class"]
+        k2 = f"{k1}|{sn['h1']['pos']}|{sn['h4']['pos']}"
+        for label, cell in (("ميل+موقع", self.cells.get("sub", {}).get(k2)), ("ميل", self.cells.get("main", {}).get(k1))):
+            if cell and cell.get("n") and (cell["n"] >= self.min_sample or label == "ميل"):
+                warn = " (عينة غير كافية)" if cell["n"] < self.min_sample else ""
+                return f"{cell['h1_rate'] * 100:.1f}% من {cell['n']} صفقة — خلية {label}{warn}"
+        return "غير متوفرة (لا يوجد باكتست)"
+
+    @staticmethod
+    def _deadline_line(tr) -> str:
+        if tr.wait_deadline is None:
+            return "المهلة: لا تنطبق (الفريم عبر الصفر)"
+        bars = tr.wait_deadline - tr.entry_ts // 900
+        return f"المهلة المحسوبة: {bars} شمعة 15د (~{bars / 4:.1f} ساعة)"
 
     def handle(self, kind: str, tr, info: dict) -> None:
         if kind == "entry":
@@ -59,12 +71,13 @@ class Notifier:
                 f"دخول {d} — {tr.symbol}", f"السعر: {tr.entry_price:.6g}",
                 f"المرحلة الابتدائية: {M.STAGE_AR[tr.initial_stage]} ({tr.initial_stage})",
                 _frame("الساعة", tr.snap["h1"]), _frame("الـ4 ساعات", tr.snap["h4"]),
-                f"ETA_1H: {_eta(tr.snap['h1']['eta'])}", f"الوقف الابتدائي: {tr.initial_stop:.6g}",
+                f"ETA_1H: {_eta(tr.snap['h1']['eta'])}", self._deadline_line(tr),
+                f"الوقف الابتدائي: {tr.initial_stop:.6g}",
                 f"نسبة عبور الساعة التاريخية لنفس الخلية: {self.hist_rate(tr)}"]))
         elif kind == "stage_1h":
-            self.send(f"✅ الساعة عبرت الصفر — {tr.symbol} ({tr.side}) → الانتظار للـ4 ساعات أو RIDE")
+            self.send(f"✅ الساعة عبرت الصفر — {tr.symbol} ({tr.side}) @ {info['price']:.6g} → الانتظار للـ4 ساعات أو RIDE")
         elif kind == "stage_4h":
-            self.send(f"✅ الـ4 ساعات عبرت الصفر — {tr.symbol} ({tr.side}) → RIDE")
+            self.send(f"✅ الـ4 ساعات عبرت الصفر — {tr.symbol} ({tr.side}) @ {info['price']:.6g} → RIDE")
         elif kind == "stop_move":
             self.send(f"🔧 تحريك الوقف — {tr.symbol}: {info['old']:.6g} → {info['new']:.6g} (مرحلة {tr.stop_stage})")
         elif kind == "exit":

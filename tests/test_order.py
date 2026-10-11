@@ -32,7 +32,7 @@ def test_stop_check_precedes_update_on_double_close_bar(cfg, s):
     for k in range(7):
         step(eng, f, k)
     tr = eng.open["X"]                                    # A used the old stop -> survived bar 6
-    assert tr.stage == M.RIDE and tr.stop == pytest.approx(fav(s, 110 - 2 * 2))
+    assert tr.stage == M.RIDE and tr.stop == pytest.approx(fav(s, 110 - 1.5 * 2))
     step(eng, f, 7)                                       # next bar low (109.9) > 106: alive
     assert "X" in eng.open
     fb.lows = {7: 99}
@@ -40,7 +40,7 @@ def test_stop_check_precedes_update_on_double_close_bar(cfg, s):
     eng2 = make_engine(cfg)
     for k in range(8):
         step(eng2, f2, k)
-    assert eng2.closed[0].exit_reason == M.STOP_TRAIL_2 and eng2.closed[0].exit_price == pytest.approx(fav(s, 106))
+    assert eng2.closed[0].exit_reason == M.STOP_TRAIL_2 and eng2.closed[0].exit_price == pytest.approx(fav(s, 107))
 
 
 @pytest.mark.parametrize("s", SIDES)

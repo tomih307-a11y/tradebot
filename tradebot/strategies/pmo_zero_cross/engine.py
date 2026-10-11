@@ -70,6 +70,10 @@ class PMOEngine:
         # B) refresh HTF view (values are already aligned to last CLOSED candles in `feats`)
         for sym in sorted(live):
             self._t(ts, "B", sym)
+            tr = self.open[sym]
+            f, i = live[sym]
+            if tr.stage == M.WAIT_1H and f.closed1h[i]:
+                self._set_deadline(tr, ts, f, i)
 
         # C) stage transitions
         for sym in sorted(live):
@@ -107,36 +111,52 @@ class PMOEngine:
         if f.ts[i] <= tr.entry_ts:
             return
         hi, lo = float(f.high[i]), float(f.low[i])
+        k = M.STAGE_RANK[tr.stage]                     # the bar belongs to the stage in force before this bar's transitions
+        pb = tr.phase_best[k]
         if tr.s == 1:
             tr.best_price, tr.worst_price = max(tr.best_price, hi), min(tr.worst_price, lo)
+            tr.phase_best[k] = hi if pb is None else max(pb, hi)
         else:
             tr.best_price, tr.worst_price = min(tr.best_price, lo), max(tr.worst_price, hi)
+            tr.phase_best[k] = lo if pb is None else min(pb, lo)
 
     def _bars(self, tr: Trade, ts: int) -> int:
         return int((ts - tr.entry_ts) // self.BAR_SEC)
 
-    def _set_stage(self, tr: Trade, stage: str, ts: int) -> None:
+    def _set_stage(self, tr: Trade, stage: str, ts: int, price: float) -> None:
         tr.stage = stage
         if M.STAGE_RANK[stage] > M.STAGE_RANK[tr.max_stage]:
             tr.max_stage = stage
-        b = self._bars(tr, ts)
-        tr.transitions.append([stage, b])
+        tr.transitions.append([stage, self._bars(tr, ts), price])
+
+    def _set_deadline(self, tr: Trade, ts: int, f: SymbolFeatures, i: int) -> None:
+        """WAIT_DEADLINE = bar_no + min(cap, max(MIN_WAIT_1H, ceil(ETA_1H * 4 * WAIT_ETA_MULT))); inf ETA -> MIN."""
+        e = self.s.exits
+        eta = M.eta_candles(float(f.pmo1h[i]), float(f.slope1h[i]), tr.s)
+        wait = e.min_wait_1h
+        if not math.isinf(eta):
+            wait = max(wait, math.ceil(eta * 4 * e.wait_eta_mult - 1e-9))
+        wait = min(wait, e.max_wait_1h_cap)
+        bar_no = int(ts // self.BAR_SEC)
+        tr.wait_deadline = bar_no + int(wait)
+        tr.deadline_log.append([bar_no, tr.wait_deadline])
 
     # ───────────────────────── C) transitions ─────────────────────────
     def _transitions(self, tr: Trade, ts: int, f: SymbolFeatures, i: int) -> None:
         s = tr.s
+        c = float(f.close[i])
         if tr.stage == M.WAIT_1H and f.closed1h[i] and s * f.pmo1h[i] >= 0:
-            self._set_stage(tr, M.WAIT_4H, ts)
-            tr.h1_cross_bars = self._bars(tr, ts)
-            self.on_event("stage_1h", tr, {"ts": ts, "price": float(f.close[i])})
+            self._set_stage(tr, M.WAIT_4H, ts, c)
+            tr.h1_cross_bars, tr.h1_cross_price = self._bars(tr, ts), c
+            self.on_event("stage_1h", tr, {"ts": ts, "price": c})
             if s * f.pmo4h[i] >= 0:                      # 4H already across -> RIDE immediately
-                self._set_stage(tr, M.RIDE, ts)
-                tr.h4_cross_bars = self._bars(tr, ts)
-                self.on_event("stage_4h", tr, {"ts": ts, "price": float(f.close[i])})
+                self._set_stage(tr, M.RIDE, ts, c)
+                tr.h4_cross_bars, tr.h4_cross_price = self._bars(tr, ts), c
+                self.on_event("stage_4h", tr, {"ts": ts, "price": c})
         elif tr.stage == M.WAIT_4H and f.closed4h[i] and s * f.pmo4h[i] >= 0:
-            self._set_stage(tr, M.RIDE, ts)
-            tr.h4_cross_bars = self._bars(tr, ts)
-            self.on_event("stage_4h", tr, {"ts": ts, "price": float(f.close[i])})
+            self._set_stage(tr, M.RIDE, ts, c)
+            tr.h4_cross_bars, tr.h4_cross_price = self._bars(tr, ts), c
+            self.on_event("stage_4h", tr, {"ts": ts, "price": c})
 
     # ───────────────────────── D) failures ─────────────────────────
     def _failure(self, tr: Trade, ts: int, f: SymbolFeatures, i: int):
@@ -146,7 +166,7 @@ class PMOEngine:
                 return M.FAIL_1H, "1h_slope"
             if e.fail_1h_pmo15_back and s * f.pmo15[i] < 0:
                 return M.FAIL_1H, "pmo15_back"
-            if e.fail_1h_timeout and self._bars(tr, ts) >= e.max_wait_1h:
+            if e.fail_1h_timeout and tr.wait_deadline is not None and int(ts // self.BAR_SEC) > tr.wait_deadline:
                 return M.FAIL_1H, "timeout"
         elif tr.stage == M.WAIT_4H:
             if e.fail_4h_slope and f.closed4h[i] and s * f.slope4h[i] < 0:
@@ -207,12 +227,27 @@ class PMOEngine:
         tr.mfe_pct = s * (best - e) / e * 100.0
         tr.mae_pct = s * (worst - e) / e * 100.0
         tr.mfe_retained = (tr.gross_ret_pct / tr.mfe_pct) if tr.mfe_pct > 0 else None
+        self._phases(tr, fill)
         if self.costs is not None:
             self.costs.apply(tr)
         self.open.pop(tr.symbol, None)
         self.closed.append(tr)
         self.last_exit_ts[tr.symbol] = ts
         self.on_event("exit", tr, {"ts": ts, "price": fill, "reason": reason})
+
+    @staticmethod
+    def _phases(tr: Trade, fill: float) -> None:
+        """Favorable price move (% of entry) per phase: entry->1H cross, 1H->4H cross, 4H cross->exit."""
+        e, s = tr.entry_price, tr.s
+        h1, h4 = tr.h1_cross_price, tr.h4_cross_price
+        b0 = e
+        b1 = h1 if h1 is not None else fill
+        b2 = h4 if h4 is not None else (fill if h1 is not None else b1)
+        b3 = fill if h4 is not None else b2
+        tr.phase_moves = [s * (b1 - b0) / e * 100.0, s * (b2 - b1) / e * 100.0, s * (b3 - b2) / e * 100.0]
+        starts = [e, h1, h4]
+        tr.phase_mfe = [None if (tr.phase_best[k] is None or starts[k] is None)
+                        else max(0.0, s * (tr.phase_best[k] - starts[k]) / e * 100.0) for k in range(3)]
 
     def force_close_all(self, ts: int, feats: dict[str, SymbolFeatures]) -> None:
         for sym in sorted(self.open):
@@ -259,9 +294,11 @@ class PMOEngine:
                 continue
             liq = 0.0 if math.isnan(f.liq24[i]) else float(f.liq24[i])
             cands.append({"sym": sym, "side": side, "f": f, "i": i, "stage": stage,
-                          "h1": h1, "h4": h4, "eta": h1["eta"], "liq": liq})
+                          "h1": h1, "h4": h4, "eta": h1["eta"], "liq": liq,
+                          "n_with": M.n_slopes_with(h1, h4)})
 
-        cands.sort(key=lambda c: (M.ENTRY_PRIORITY[c["stage"]], c["eta"], -c["liq"], c["sym"]))
+        # priority: (1) more larger-frame slopes WITH the trade, (2) initial stage, (3) lower ETA_1H, (4) liquidity
+        cands.sort(key=lambda c: (-c["n_with"], M.ENTRY_PRIORITY[c["stage"]], c["eta"], -c["liq"], c["sym"]))
         slots = self.tr_cfg.max_open_trades - len(self.open)
         for k, c in enumerate(cands):
             if k >= slots:
@@ -297,7 +334,8 @@ class PMOEngine:
         fill = self.ex.open_position(c["sym"], side, close, f, i)
         sl = self.tr_cfg.stop_loss_pct / 100.0
         stop0 = fill * (1 - s * sl)
-        snap = {"h1": c["h1"], "h4": c["h4"]}
+        snap = {"h1": c["h1"], "h4": c["h4"], "slope_class": M.slope_class(c["h1"], c["h4"]),
+                "n_slopes_with": c["n_with"]}
         j = btc.index_of(ts) if btc is not None else None
         if j is not None:
             snap["btc15"] = {"pmo": float(btc.pmo15[j]), "signal": float(btc.signal15[j]), "slope": float(btc.slope15[j])}
@@ -308,10 +346,12 @@ class PMOEngine:
                    initial_stop=stop0, trail_stage=trail0, extreme_close=close,
                    best_price=fill, worst_price=fill, snap=snap)
         if c["stage"] != M.WAIT_1H:
-            tr.h1_cross_bars = 0
+            tr.h1_cross_bars, tr.h1_cross_price = 0, fill
         if c["stage"] == M.RIDE:
-            tr.h4_cross_bars = 0
-        tr.transitions.append([c["stage"], 0])
+            tr.h4_cross_bars, tr.h4_cross_price = 0, fill
+        tr.transitions.append([c["stage"], 0, fill])
+        if c["stage"] == M.WAIT_1H:
+            self._set_deadline(tr, ts, f, i)
         self.next_id += 1
         self.open[tr.symbol] = tr
         self.ex.place_stop(tr)

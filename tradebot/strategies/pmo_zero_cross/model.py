@@ -46,6 +46,15 @@ def frame_state(pmo: float, signal: float, slope: float, s: int) -> dict:
     }
 
 
+def slope_class(h1: dict, h4: dict) -> str:
+    """Level-1 initial-state class: slope is the primary classifier (1H slope | 4H slope)."""
+    return f"{h1['slope_dir']}|{h4['slope_dir']}"
+
+
+def n_slopes_with(h1: dict, h4: dict) -> int:
+    return (h1["slope_dir"] == "with") + (h4["slope_dir"] == "with")
+
+
 @dataclass
 class Trade:
     id: int
@@ -65,7 +74,14 @@ class Trade:
     worst_price: float = 0.0         # worst low/high seen after entry (for MAE)
     h1_cross_bars: int | None = None # 15m bars from entry to the 1H crossing (0 = already across)
     h4_cross_bars: int | None = None
-    transitions: list = field(default_factory=list)   # [[stage, bars_from_entry], ...]
+    transitions: list = field(default_factory=list)   # [[stage, bars_from_entry, price], ...]
+    h1_cross_price: float | None = None
+    h4_cross_price: float | None = None
+    wait_deadline: int | None = None                  # absolute 15m bar number (ts // 900)
+    deadline_log: list = field(default_factory=list)  # [[bar_no, deadline], ...] every (re)computation
+    phase_best: list = field(default_factory=lambda: [None, None, None])  # best favorable price seen per phase
+    phase_moves: list | None = None                   # favorable move (% of entry) per phase on exit
+    phase_mfe: list | None = None
     n_stop_moves: int = 0
     snap: dict = field(default_factory=dict)
     stop_order_id: int | None = None

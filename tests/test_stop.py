@@ -20,6 +20,7 @@ def ladder(s):
     fb.closed1h[9] = True
     fb.set("slope1h", slice(9, None), -0.1)
     fb.price(slice(9, None), 121).price(slice(10, None), 125)
+    fb.a["atr15"][6:9] = 3.0                      # bigger ATR on bars 6-8 would pull a stop back
     return fb
 
 
@@ -29,6 +30,7 @@ def test_stage_ladder(cfg, s):
     eng, f = make_engine(cfg), fb.build()
     tr = None
     def stop(): return eng.open["X"].stop
+    assert cfg.pmo_zero_cross.trail.mult_2 == 1.5            # spec default
     for k in range(3):
         step(eng, f, k)
     tr = eng.open["X"]
@@ -41,16 +43,14 @@ def test_stage_ladder(cfg, s):
     assert stop() == pytest.approx(fav(s, 100.08))                        # break-even + 2 fees beats 103-3
     step(eng, f, 5)                                                       # extreme 110
     assert stop() == pytest.approx(fav(s, 107)) and tr.stop_stage == 1
-    fb.a["atr15"][6:] = 3.0                                                # bigger ATR would pull the stop back
     step(eng, f, 6)
     assert stop() == pytest.approx(fav(s, 107))                           # never retreats
     step(eng, f, 7)                                                       # 4H crossed -> RIDE, stage 2
-    assert tr.stage == M.RIDE and stop() == pytest.approx(fav(s, 107))    # 110-2*2=106 < 107
+    assert tr.stage == M.RIDE and stop() == pytest.approx(fav(s, 107))    # 110-1.5*2=107 == 107
     step(eng, f, 8)                                                       # extreme 120
-    assert stop() == pytest.approx(fav(s, 116)) and tr.stop_stage == 2
-    step(eng, f, 9)                                                       # 1H slope < 0 -> stage 3 (ATR15=3 here)
-    assert tr.trail_stage == 3 and stop() == pytest.approx(fav(s, 121 - 3 * 1.5)) and tr.stop_stage == 3
-    fb.a["atr15"][:] = 1.0
+    assert stop() == pytest.approx(fav(s, 117)) and tr.stop_stage == 2
+    step(eng, f, 9)                                                       # 1H slope < 0 -> stage 3 (ATR15=1)
+    assert tr.trail_stage == 3 and stop() == pytest.approx(fav(s, 121 - 1.5)) and tr.stop_stage == 3
     step(eng, f, 10)                                                      # stays tightened, no stage-2 formula
     assert stop() == pytest.approx(fav(s, 125 - 1.5)) and tr.trail_stage == 3
 

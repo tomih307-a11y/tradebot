@@ -43,14 +43,18 @@ atr_len = 14
 [pmo_zero_cross.exits]             # مفاتيح تشغيل/إيقاف شروط الفشل
 fail_1h_slope = true               # WAIT_1H: شمعة ساعة مغلقة بـ SLOPE_1H < 0
 fail_1h_pmo15_back = true          # WAIT_1H: PMO_15 يعود تحت الصفر
-fail_1h_timeout = true             # WAIT_1H: مرور MAX_WAIT_1H شمعة 15د دون عبور
-max_wait_1h = 16
+fail_1h_timeout = true             # WAIT_1H: تجاوز المهلة الديناميكية WAIT_DEADLINE دون عبور
+# WAIT_DEADLINE = رقم الشمعة الحالية + min( max_wait_1h_cap , max( min_wait_1h , ceil( ETA_1H × 4 × wait_eta_mult ) ) )
+# تُحسب عند الدخول وتُعاد عند إغلاق كل شمعة ساعة؛ ETA لا نهائي => min_wait_1h.
+min_wait_1h = 16                   # شموع 15 دقيقة
+wait_eta_mult = 1.5
+max_wait_1h_cap = 96               # 24 ساعة
 fail_4h_slope = true               # WAIT_4H: شمعة 4س مغلقة بـ SLOPE_4H < 0
 fail_4h_pmo1h_back = true          # WAIT_4H: PMO_1H يعود تحت الصفر
 
 [pmo_zero_cross.trail]
 mult_1 = 3.0                       # بعد عبور الساعة:      ATR_15 × mult_1
-mult_2 = 2.0                       # بعد عبور الـ4 ساعات:  ATR_1H × mult_2
+mult_2 = 1.5                       # بعد عبور الـ4 ساعات:  ATR_1H × mult_2
 mult_3 = 1.5                       # ضعف زخم داخل RIDE:    ATR_15 × mult_3
 # نقطة التعادل لا تُطبَّق إلا إذا كان السعر الحالي تجاوزها (وإلا تقع فوق السعر في اللونق وتُضرب في الشمعة التالية).
 # false = التطبيق الحرفي دائماً.
@@ -78,8 +82,9 @@ split_selection_pct = 70           # 70% اختيار / 30% تحقق (حسب ا�
 min_sample = 30                    # أقل من هذا = "عينة غير كافية"
 eta_buckets = [0, 2, 4, 8]         # شرائح ETA_1H: 0–2، 2–4، 4–8، 8+، ثم لا نهائي
 sweep_mult_1 = [2.0, 2.5, 3.0, 4.0]
-sweep_mult_2 = [1.5, 2.0, 3.0]
+sweep_mult_2 = [1.0, 1.5, 2.0, 3.0]
 sweep_mult_3 = [1.0, 1.5, 2.0]
+sweep_wait_eta_mult = [1.0, 1.5, 2.0]   # + وضع «بدون مهلة» (الخروج بالميل فقط)
 liquidity_window_bars = 96         # سيولة 24 ساعة = مجموع قيمة التداول لآخر 96 شمعة 15د
 data_dir = "data/cache"
 reports_dir = "reports"

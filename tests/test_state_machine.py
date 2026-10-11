@@ -90,19 +90,19 @@ def test_fail_1h_pmo15_back(cfg, s):
 
 @pytest.mark.parametrize("s", SIDES)
 def test_fail_1h_timeout(cfg, s):
-    fb = FB(s=s, n=60).cross_at(2)
-    eng, f = entered(cfg, fb, 2 + 16)                 # processed bars up to entry+15
-    assert "X" in eng.open
-    step(eng, f, 2 + 16)
+    fb = FB(s=s, n=60).cross_at(2)                    # ETA_1H=1 -> wait = max(16, 6) = 16 -> deadline bar 18
+    eng, f = entered(cfg, fb, 19)                     # processed bars 0..18: still waiting
+    assert "X" in eng.open and eng.open["X"].wait_deadline == 18
+    step(eng, f, 19)                                  # bar 19 > deadline 18
     assert eng.closed[0].exit_reason == M.FAIL_1H and eng.closed[0].fail_detail == "timeout"
 
 
 @pytest.mark.parametrize("s", SIDES)
 def test_crossing_on_timeout_bar_counts_as_cross(cfg, s):
     fb = FB(s=s, n=60).cross_at(2)
-    fb.closed1h[18] = True
-    fb.set("pmo1h", slice(18, None), 0.5)
-    eng, f = entered(cfg, fb, 19)
+    fb.closed1h[19] = True
+    fb.set("pmo1h", slice(19, None), 0.5)
+    eng, f = entered(cfg, fb, 20)
     assert "X" in eng.open and eng.open["X"].stage == M.WAIT_4H
 
 
@@ -188,5 +188,6 @@ def test_transitions_recorded_with_candle_counts(cfg, s):
     fb.closed4h[9] = True
     fb.set("pmo4h", slice(9, None), 1)
     eng, f = entered(cfg, fb, 10)
-    assert eng.open["X"].transitions == [[M.WAIT_1H, 0], [M.WAIT_4H, 4], [M.RIDE, 7]]
+    assert [t[:2] for t in eng.open["X"].transitions] == [[M.WAIT_1H, 0], [M.WAIT_4H, 4], [M.RIDE, 7]]
+    assert all(len(t) == 3 for t in eng.open["X"].transitions)          # each transition also records its price
     assert (eng.open["X"].h1_cross_bars, eng.open["X"].h4_cross_bars) == (4, 7)
