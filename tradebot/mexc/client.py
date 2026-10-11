@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import http.client
 import json
 import logging
 import os
@@ -77,7 +78,7 @@ class MexcClient:
                 return out.get("data") if isinstance(out, dict) and "data" in out else out
             except MexcError:
                 raise
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, http.client.HTTPException, ConnectionError, OSError) as e:
                 last = e
                 time.sleep(min(2 ** attempt, 8))
         raise MexcError(f"{method} {path} failed after {self.retries} tries: {last}")
