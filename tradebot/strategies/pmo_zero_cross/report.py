@@ -221,7 +221,10 @@ def write_report(cfg, run_fn, base_engine, start_ts, end_ts, out_dir, symbols=No
     L.append("# تقرير الباكتست — تسلسل عبور الصفر لـ PMO\n")
     L.append(f"- الفترة: {iso(start_ts)} → {iso(end_ts)}")
     L.append(f"- حد التقسيم ({bt.split_selection_pct}% اختيار / {100 - bt.split_selection_pct}% تحقق): {iso(split_ts)} (حسب وقت الدخول)")
-    L.append(f"- العملات: {', '.join(sorted(symbols if symbols is not None else {t.symbol for t in base_engine.closed}))}")
+    names = sorted(symbols if symbols is not None else {t.symbol for t in base_engine.closed})
+    shown = ", ".join(names) if len(names) <= bt.report_max_symbols_listed else f"{len(names)} عملة"
+    L.append(f"- العملات: {shown}")
+    L.append(f"- عملات تداولت فعلاً (لها صفقات واحدة على الأقل): {len({t.symbol for t in base_engine.closed})}")
     L.append(f"- الرسوم/جهة: {cfg.trading.taker_fee_pct}% · الانزلاق: {bt.slippage_pct}% · وقف ابتدائي: {sl}%")
     L.append(f"- المهلة: min={s.exits.min_wait_1h} شمعة · ETA×{s.exits.wait_eta_mult} · سقف={s.exits.max_wait_1h_cap} شمعة · مفعّلة={s.exits.fail_1h_timeout}")
     L.append(f"- صفقات مغلقة قسراً بنهاية البيانات (مستبعدة من الإحصاءات): {len(eod)}")

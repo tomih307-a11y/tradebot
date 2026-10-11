@@ -48,7 +48,8 @@ def run_backtest(cfg, feats: dict[str, SymbolFeatures], btc: SymbolFeatures | No
     engine = PMOEngine(cfg, BacktestExecutor(cfg), CostModel(cfg, funding_hist),
                        trade_from_ts=start_ts, trace=trace)
     all_feats = dict(feats)
-    timeline = sorted({int(t) for f in feats.values() for t in f.ts if start_ts <= t <= end_ts})
+    allts = np.unique(np.concatenate([f.ts for f in feats.values()])) if feats else np.array([], dtype=np.int64)
+    timeline = [int(t) for t in allts[(allts >= start_ts) & (allts <= end_ts)]]
     for ts in timeline:
         engine.process_bar(ts, all_feats, btc)
     if engine.open and timeline:
@@ -65,12 +66,15 @@ def load_features(cfg, client, symbols: list[str], start_ts: int, end_ts: int, n
     data_dir = s.backtest.data_dir
     out, btc = {}, None
     names = list(dict.fromkeys(list(symbols) + [cfg.trading.btc_symbol]))
-    for sym in names:
+    every = s.backtest.progress_every
+    for n_done, sym in enumerate(names, 1):
+        if n_done % every == 0:
+            print(f"  downloaded {n_done}/{len(names)} symbols", flush=True)
         k = {}
         for key, tf in (("15", s.tf_entry), ("1h", s.tf_1h), ("4h", s.tf_4h)):
             t0 = start_ts - pad_bars * TF_SECONDS[tf]
             k[key] = get_klines(client, data_dir, sym, tf, t0, end_ts, now=now)
-        if len(k["15"]["time"]) == 0:
+        if len(k["15"]["time"]) == 0 or len(k["1h"]["time"]) == 0 or len(k["4h"]["time"]) == 0:
             continue
         out[sym] = build_features(sym, k["15"], k["1h"], k["4h"], s, liquidity_window=s.backtest.liquidity_window_bars)
     btc = out.get(cfg.trading.btc_symbol)

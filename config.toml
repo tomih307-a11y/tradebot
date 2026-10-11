@@ -11,8 +11,9 @@ base_url = "https://contract.mexc.com"
 api_key_env = "MEXC_API_KEY"       # أسماء متغيرات البيئة التي تحمل المفاتيح
 api_secret_env = "MEXC_API_SECRET"
 request_timeout_sec = 15
-max_retries = 3
+max_retries = 6
 kline_page_limit = 2000            # أقصى عدد شموع في طلب واحد
+min_request_interval_sec = 0.15    # فاصل بين الطلبات (حماية من حدّ معدل MEXC)
 
 # ───────── إعدادات التداول المشتركة (تحترمها الاستراتيجية كما هي) ─────────
 [trading]
@@ -72,12 +73,15 @@ filter_btc = false
 # MEXC تحتفظ بشموع 15 دقيقة لنحو 6 أشهر فقط (الساعة و4 ساعات أطول). اختر فترة ضمن آخر ~170 يوماً.
 start = "2026-04-20T00:00:00Z"
 end = "2026-10-11T00:00:00Z"
-# symbols = [...]                  # اختياري: يتجاوز trading.symbols في الباكتست فقط
+# symbols = [...]                  # اختياري: يتجاوز trading.symbols في الباكتست فقط؛ أو "all" = كل عقود USDT النشطة على MEXC
 slippage_pct = 0.02
 slippage_on_stop = false           # الوقف يُنفَّذ بسعره (أو بالافتتاح عند الفجوة) دون انزلاق
 funding_interval_hours = 8
 funding_fixed_pct = 0.01           # يُستخدم عند غياب بيانات MEXC التاريخية (% لكل فترة تمويل)
 use_mexc_funding_history = true
+funding_history_max_symbols = 20   # عند عدد عملات أكبر يُستخدم التمويل الثابت (جلب التاريخ لكل عملة بطيء)
+progress_every = 50                # طباعة التقدم كل N عملة أثناء التنزيل
+report_max_symbols_listed = 20     # لا يُطبع أكثر من هذا العدد من أسماء العملات في التقرير
 split_selection_pct = 70           # 70% اختيار / 30% تحقق (حسب الزمن)
 min_sample = 30                    # أقل من هذا = "عينة غير كافية"
 eta_buckets = [0, 2, 4, 8]         # شرائح ETA_1H: 0–2، 2–4، 4–8، 8+، ثم لا نهائي

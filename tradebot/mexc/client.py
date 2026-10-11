@@ -39,6 +39,8 @@ class MexcClient:
         self.timeout = cfg_mexc.request_timeout_sec
         self.retries = cfg_mexc.max_retries
         self.page_limit = cfg_mexc.kline_page_limit
+        self.min_interval = cfg_mexc.min_request_interval_sec
+        self._last_req = 0.0
         self.api_key = os.environ.get(cfg_mexc.api_key_env, "")
         self.api_secret = os.environ.get(cfg_mexc.api_secret_env, "")
 
@@ -62,6 +64,10 @@ class MexcClient:
             headers.update({"ApiKey": self.api_key, "Request-Time": ts, "Signature": sig})
         last = None
         for attempt in range(self.retries):
+            wait = self.min_interval - (time.time() - self._last_req)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_req = time.time()
             try:
                 req = urllib.request.Request(url, data=data, headers=headers, method=method)
                 with urllib.request.urlopen(req, timeout=self.timeout) as r:
@@ -86,6 +92,13 @@ class MexcClient:
     def tickers(self) -> list[dict]:
         d = self._request("GET", "/api/v1/contract/ticker")
         return d if isinstance(d, list) else [d]
+
+    def all_usdt_contracts(self) -> list[str]:
+        """Every enabled, visible USDT-margined perpetual (sorted, deterministic)."""
+        d = self._request("GET", "/api/v1/contract/detail") or []
+        d = d if isinstance(d, list) else [d]
+        return sorted(c["symbol"] for c in d
+                      if c.get("quoteCoin") == "USDT" and c.get("state") == 0 and not c.get("isHidden"))
 
     def contract_detail(self, symbol: str) -> dict:
         return self._request("GET", "/api/v1/contract/detail", {"symbol": symbol})
