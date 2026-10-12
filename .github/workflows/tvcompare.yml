@@ -1,0 +1,31 @@
+name: tv-compare
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-tv.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Print PMO values (same code as the backtest)
+        run: python tools/print_pmo.py --out reports/tv 2>&1 | tee reports/tv.log
+      - name: Publish to branch tv-compare
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b tv-compare
+          git config user.name "tv-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "pmo values" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin tv-compare

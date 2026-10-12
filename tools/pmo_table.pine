@@ -1,0 +1,25 @@
+//@version=5
+indicator("PMO values table", overlay=true)
+n1    = input.int(35, "csf ROC len")
+scale = input.int(10, "scale")
+n2    = input.int(20, "csf PMO len")
+nsig  = input.int(10, "signal EMA len")
+
+roc = 100 * (close - close[1]) / close[1]
+var float s1 = na
+s1 := na(s1[1]) ? roc : s1[1] + (roc - s1[1]) * (2 / n1)
+x = scale * s1
+var float s2 = na
+s2 := na(s2[1]) ? x : s2[1] + (x - s2[1]) * (2 / n2)
+pmo    = s2
+signal = ta.ema(pmo, nsig)
+
+var table t = table.new(position.top_right, 3, 21, bgcolor=color.new(color.black, 15), border_width=1)
+if barstate.islast
+    table.cell(t, 0, 0, "UTC open", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 0, "PMO", text_color=color.white, text_size=size.small)
+    table.cell(t, 2, 0, "SIGNAL", text_color=color.white, text_size=size.small)
+    for i = 1 to 20
+        table.cell(t, 0, i, str.format_time(time[i], "MM-dd HH:mm", "UTC"), text_color=color.white, text_size=size.small)
+        table.cell(t, 1, i, str.tostring(pmo[i], "#.####"), text_color=color.aqua, text_size=size.small)
+        table.cell(t, 2, i, str.tostring(signal[i], "#.####"), text_color=color.orange, text_size=size.small)
