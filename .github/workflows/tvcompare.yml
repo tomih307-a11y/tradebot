@@ -20,6 +20,9 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Print PMO values (same code as the backtest)
         run: python tools/print_pmo.py --out reports/tv 2>&1 | tee reports/tv.log
+      - name: Compare with TradingView numbers (close vs realClose)
+        run: python tools/tv_diag.py 2>&1 | tee reports/tv_diag.log
+        continue-on-error: true
       - name: Publish to branch tv-compare
         if: always()
         run: |
