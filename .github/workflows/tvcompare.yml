@@ -23,6 +23,9 @@ jobs:
       - name: Compare with TradingView numbers (close vs realClose)
         run: python tools/tv_diag.py 2>&1 | tee reports/tv_diag.log
         continue-on-error: true
+      - name: Raw candles around the biggest differences
+        run: python tools/print_ohlc.py 2>&1 | tee reports/ohlc.log
+        continue-on-error: true
       - name: Publish to branch tv-compare
         if: always()
         run: |
