@@ -1,0 +1,6 @@
+Min15 success= True code= 0 keys= ['amount', 'close', 'high', 'low', 'open', 'realClose', 'realHigh', 'realLow', 'realOpen', 'time', 'vol'] n= 200 first= 1791718200 last= 1791897300
+  raw head: {"success":true,"code":0,"data":{"time":[1791718200,1791719100,1791720000,1791720900,1791721800,1791722700,1791723600,1791724500,1791725400,1791726300,1791727200,1791728100,1791729000,1791729900,17917
+Min60 success= True code= 0 keys= ['amount', 'close', 'high', 'low', 'open', 'realClose', 'realHigh', 'realLow', 'realOpen', 'time', 'vol'] n= 200 first= 1791180000 last= 1791896400
+  raw head: {"success":true,"code":0,"data":{"time":[1791180000,1791183600,1791187200,1791190800,1791194400,1791198000,1791201600,1791205200,1791208800,1791212400,1791216000,1791219600,1791223200,1791226800,17912
+Hour4 success= True code= 0 keys= ['amount', 'close', 'high', 'low', 'open', 'realClose', 'realHigh', 'realLow', 'realOpen', 'time', 'vol'] n= 200 first= 1789027200 last= 1791892800
+  raw head: {"success":true,"code":0,"data":{"time":[1789027200,1789041600,1789056000,1789070400,1789084800,1789099200,1789113600,1789128000,1789142400,1789156800,1789171200,1789185600,1789200000,1789214400,17892
