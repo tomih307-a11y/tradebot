@@ -101,3 +101,12 @@ cells_file = "reports/last_backtest_cells.json"   # نسب العبور التا
 min_quote_volume_24h = 0           # تجاهل عملات سيولتها أقل من هذا (0 = معطل)
 telegram_token_env = "TELEGRAM_BOT_TOKEN"
 telegram_chat_id_env = "TELEGRAM_CHAT_ID"
+
+# ───────── أبحاث جانبية (لا تؤثر على الاستراتيجية) ─────────
+[research.stochrsi]
+rsi_len = 14                       # إعدادات TradingView الافتراضية لـ Stochastic RSI
+stoch_len = 14
+smooth_k = 3
+smooth_d = 3
+oversold = 20
+overbought = 80

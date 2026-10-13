@@ -69,3 +69,51 @@ def atr_rma(high: np.ndarray, low: np.ndarray, close: np.ndarray, n: int) -> np.
     for i in range(n, L):
         out[i] = (out[i - 1] * (n - 1) + tr[i]) / n
     return out
+
+
+def rma(x: np.ndarray, n: int) -> np.ndarray:
+    """TradingView ta.rma: alpha = 1/n, seeded with the SMA of the first n valid values."""
+    out = np.full(len(x), np.nan)
+    valid = np.where(~np.isnan(x))[0]
+    if len(valid) < n:
+        return out
+    start = valid[0] + n - 1
+    out[start] = x[valid[0]:start + 1].mean()
+    for i in range(start + 1, len(x)):
+        out[i] = (out[i - 1] * (n - 1) + x[i]) / n
+    return out
+
+
+def rsi(close: np.ndarray, n: int) -> np.ndarray:
+    """TradingView ta.rsi (Wilder)."""
+    d = np.full(len(close), np.nan)
+    d[1:] = close[1:] - close[:-1]
+    up, dn = np.where(np.isnan(d), np.nan, np.maximum(d, 0.0)), np.where(np.isnan(d), np.nan, np.maximum(-d, 0.0))
+    ru, rd = rma(up, n), rma(dn, n)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = np.where(rd == 0, 100.0, 100.0 - 100.0 / (1.0 + ru / rd))
+    out[np.isnan(ru) | np.isnan(rd)] = np.nan
+    return out
+
+
+def _sma(x: np.ndarray, n: int) -> np.ndarray:
+    out = np.full(len(x), np.nan)
+    if len(x) < n:
+        return out
+    from numpy.lib.stride_tricks import sliding_window_view
+    out[n - 1:] = sliding_window_view(x, n).mean(axis=1)          # NaN windows stay NaN
+    return out
+
+
+def stoch_rsi(close: np.ndarray, rsi_len: int, stoch_len: int, smooth_k: int, smooth_d: int):
+    """TradingView 'Stochastic RSI': K = sma(stoch(rsi), smooth_k), D = sma(K, smooth_d). Range 0-100."""
+    from numpy.lib.stride_tricks import sliding_window_view
+    r = rsi(close, rsi_len)
+    st = np.full(len(r), np.nan)
+    if len(r) >= stoch_len:
+        w = sliding_window_view(r, stoch_len)
+        lo, hi = w.min(axis=1), w.max(axis=1)                    # NaN if any NaN in window
+        with np.errstate(divide="ignore", invalid="ignore"):
+            st[stoch_len - 1:] = np.where(hi > lo, 100.0 * (r[stoch_len - 1:] - lo) / (hi - lo), np.nan)
+    k = _sma(st, smooth_k)
+    return k, _sma(k, smooth_d)
