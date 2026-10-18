@@ -32,3 +32,7 @@ python -m tradebot --strategy telegram_signals live
    ```
    `--delay` = ثواني بين نشر التوصية ودخولك (جرّب 30 و60 و180).
 3. النتيجة: `reports\telegram\signals_report.md` و`signals_backtest.csv`.
+
+## الواجهة الرسومية
+انقر مرتين على `run_gui.bat` (أو `python -m tradebot gui`)، اكتب اسم القناة، واضغط «ابدأ».
+تعرض الواجهة الرصيد والصفقات المفتوحة وسجل الأحداث. الوضع **ورقي** (محاكاة بأسعار MEXC الحقيقية) ولا ترسل أوامر حقيقية.
