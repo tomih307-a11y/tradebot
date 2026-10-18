@@ -7,7 +7,7 @@ import threading
 import time
 from pathlib import Path
 
-from .source import PublicChannelReader
+from .source import make_reader
 from .trader import Notifier, build
 
 SETTINGS = Path("state/gui_settings.json")
@@ -50,7 +50,7 @@ class GuiController:
         self._stop.set()
 
     def _loop(self) -> None:
-        reader = PublicChannelReader(self.channel)
+        reader = make_reader(self.channel)
         poll = max(1, int(self.cfg.telegram_signals.poll_interval_sec))
         while not self._stop.is_set():
             self.trader.run(reader, once=True)

@@ -53,6 +53,7 @@ def main(argv=None) -> int:
     l = sub.add_parser("live")
     l.add_argument("--once", action="store_true", help="process one bar then exit")
     sub.add_parser("gui")
+    sub.add_parser("tg-login")
     c = sub.add_parser("compare-tv")
     c.add_argument("--file", required=True); c.add_argument("--symbol", default="BTC_USDT")
     c.add_argument("--tf", default="Min15"); c.add_argument("--n", type=int, default=20)
@@ -63,6 +64,10 @@ def main(argv=None) -> int:
     logging.basicConfig(level=getattr(logging, cfg.general.log_level), format="%(asctime)s %(name)s %(message)s")
     if args.cmd == "compare-tv":
         return compare_tv(cfg, args)
+    if args.cmd == "tg-login":
+        from tradebot.strategies.telegram_signals import tg_login
+        tg_login()
+        return 0
     if args.cmd == "gui":
         from tradebot.strategies.telegram_signals.gui import main as gui_main
         gui_main(cfg)

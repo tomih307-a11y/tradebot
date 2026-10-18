@@ -59,3 +59,51 @@ def load_export(path: str) -> list[dict]:
             datetime.fromisoformat(m["date"]).replace(tzinfo=timezone.utc).timestamp()) if m.get("date") else 0
         out.append({"id": int(m["id"]), "ts": ts, "text": normalize(t)})
     return sorted(out, key=lambda x: x["id"])
+
+
+class TelethonReader:
+    """Read a PRIVATE channel with the user's own Telegram account (Telethon). Read-only; the session file stays on the user's PC.
+    channel: numeric id (e.g. -1002639765041) or username. Login once with:  python -m tradebot tg-login"""
+
+    def __init__(self, channel: str, api_id: int, api_hash: str, session: str = "state/tg_session", limit: int = 60):
+        self.channel, self.api_id, self.api_hash, self.session, self.limit = channel, api_id, api_hash, session, limit
+        self._client = None
+        self._entity = None
+
+    def _connect(self):
+        import asyncio
+
+        from telethon import TelegramClient
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+        c = TelegramClient(self.session, self.api_id, self.api_hash)
+        c.connect()
+        if not c.is_user_authorized():
+            raise RuntimeError("حساب تلقرام غير مسجَّل دخوله — شغّل أولاً: python -m tradebot tg-login")
+        c.get_dialogs(limit=300)                     # fills the entity cache so a numeric id resolves
+        ch = self.channel.strip()
+        self._entity = c.get_entity(int(ch) if ch.lstrip("-").isdigit() else ch)
+        self._client = c
+
+    def fetch(self) -> list[dict]:
+        if self._client is None:
+            self._connect()
+        out = []
+        for m in self._client.get_messages(self._entity, limit=self.limit):
+            if m.id and m.date:
+                out.append({"id": int(m.id), "ts": int(m.date.timestamp()), "text": normalize(m.message or "")})
+        return sorted(out, key=lambda x: x["id"])
+
+
+def make_reader(channel: str):
+    """Public username -> web preview reader. Numeric id / private channel -> Telethon (needs TG_API_ID, TG_API_HASH)."""
+    import os
+    ch = channel.strip()
+    if ch.lstrip("-").isdigit():
+        aid, ah = os.environ.get("TG_API_ID", ""), os.environ.get("TG_API_HASH", "")
+        if not (aid and ah):
+            raise SystemExit("القناة خاصة: ضع TG_API_ID و TG_API_HASH (من my.telegram.org) في متغيرات البيئة، ثم python -m tradebot tg-login")
+        return TelethonReader(ch, int(aid), ah)
+    return PublicChannelReader(ch)
