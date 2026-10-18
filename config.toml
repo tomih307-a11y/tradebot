@@ -110,3 +110,23 @@ smooth_k = 3
 smooth_d = 3
 oversold = 20
 overbought = 80
+
+# ───────── استراتيجية: توصيات قناة Telegram العامة (وحدة مستقلة) ─────────
+# التشغيل: python -m tradebot --strategy telegram_signals live      (dry_run في [trading] يتحكم: true = ورقي)
+[telegram_signals]
+channel = ""                       # اسم القناة العامة (الجزء بعد t.me/) — يُملأ على جهازك
+poll_interval_sec = 5              # كل كم ثانية يفحص القناة والصفقات
+max_signal_age_sec = 900           # يتجاهل توصية أقدم من هذا (عند إعادة التشغيل مثلاً)
+max_entry_deviation_pct = 1.0      # يتجاهل التوصية إذا ابتعد السعر الحالي عن الدخول بأكثر من هذا (التوصية فاتت)
+margin_pct_of_balance = 10         # حد 1: هامش كل صفقة = هذه النسبة من الرصيد
+max_concurrent = 2                 # حد 2: أقصى صفقات متزامنة
+paper_balance_usdt = 25            # الرصيد الابتدائي في الوضع الورقي
+leverage_mode = "signal"           # signal = رافعة التوصية (مقيّدة بحد المنصة للعقد) | fixed
+fixed_leverage = 5
+stop_mode = "channel_4h_close"     # channel_4h_close = قاعدة القناة (إغلاق شمعة 4س) | exchange = أمر وقف حقيقي
+breakeven_after_tp1 = true         # بعد الهدف الأول ينتقل الوقف لسعر الدخول (كما تفعل القناة)
+maintenance_margin = 0.005         # لحساب سعر التصفية في المحاكاة
+paper_fee_pct = 0.04               # رسوم كل تنفيذ في المحاكاة (محافظ: Taker)
+paper_slippage_pct = 0.02
+state_file = "state/telegram_signals_state.json"
+log_file = "reports/telegram_signals_trades.csv"

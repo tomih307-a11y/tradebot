@@ -101,6 +101,11 @@ class MexcClient:
         return sorted(c["symbol"] for c in d
                       if c.get("quoteCoin") == "USDT" and c.get("state") == 0 and not c.get("isHidden"))
 
+    def last_price(self, symbol: str) -> float:
+        d = self._request("GET", "/api/v1/contract/ticker", {"symbol": symbol})
+        d = d[0] if isinstance(d, list) else d
+        return float(d["lastPrice"])
+
     def contract_detail(self, symbol: str) -> dict:
         return self._request("GET", "/api/v1/contract/detail", {"symbol": symbol})
 

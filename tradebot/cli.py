@@ -41,12 +41,15 @@ def compare_tv(cfg, args) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="tradebot")
     ap.add_argument("--config", default="config.toml")
+    ap.add_argument("--strategy", help="override [general] strategy (e.g. telegram_signals)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("backtest")
     b.add_argument("--start"); b.add_argument("--end")
     b.add_argument("--symbols", help='comma separated, or "all" = every active USDT perpetual on MEXC')
     b.add_argument("--max-open", type=int, help="override trading.max_open_trades for this run only")
     b.add_argument("--out", help="reports directory (default: backtest.reports_dir)")
+    b.add_argument("--history", help="telegram_signals: Telegram Desktop export (result.json)")
+    b.add_argument("--delay", type=int, default=60, help="telegram_signals: seconds between the post and our entry")
     l = sub.add_parser("live")
     l.add_argument("--once", action="store_true", help="process one bar then exit")
     c = sub.add_parser("compare-tv")
@@ -59,7 +62,7 @@ def main(argv=None) -> int:
     logging.basicConfig(level=getattr(logging, cfg.general.log_level), format="%(asctime)s %(name)s %(message)s")
     if args.cmd == "compare-tv":
         return compare_tv(cfg, args)
-    strat = load_strategy(cfg.general.strategy)
+    strat = load_strategy(args.strategy or cfg.general.strategy)
     (strat.run_backtest_cli if args.cmd == "backtest" else strat.run_live_cli)(cfg, args)
     return 0
 
