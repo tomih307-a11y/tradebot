@@ -1,4 +1,4 @@
-"""Desktop window for the Telegram-signals module (paper mode). Logic lives in GuiController (no tkinter), so it is testable."""
+"""Desktop window for the Telegram-signals module (paper or live, per trading.dry_run). Logic lives in GuiController (no tkinter), so it is testable."""
 from __future__ import annotations
 
 import json
@@ -14,9 +14,9 @@ SETTINGS = Path("state/gui_settings.json")
 
 
 class QueueNotifier(Notifier):
-    def __init__(self, cfg, q: queue.Queue):
+    def __init__(self, cfg, q: queue.Queue, tag: str):
         super().__init__(cfg)
-        self.q = q
+        self.q, self.tag = q, tag
 
     def send(self, text: str) -> None:
         self.q.put(("log", time.strftime("%H:%M:%S") + "  " + text))
@@ -41,7 +41,7 @@ class GuiController:
         if not self.channel:
             raise ValueError("اكتب اسم القناة أولاً")
         self.trader = build(self.cfg)                      # refuses unless dry_run = true (paper)
-        self.trader.nt = QueueNotifier(self.cfg, self.q)
+        self.trader.nt = QueueNotifier(self.cfg, self.q, self.trader.nt.tag)
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
@@ -92,7 +92,8 @@ def main(cfg) -> None:
 
     ctl = GuiController(cfg, load_channel() or cfg.telegram_signals.channel)
     root = tk.Tk()
-    root.title("TradeBot — توصيات تلقرام (وضع ورقي)")
+    live = not cfg.trading.dry_run
+    root.title("TradeBot — توصيات تلقرام (" + ("تنفيذ حقيقي" if live else "وضع ورقي") + ")")
     root.geometry("900x560")
 
     top = ttk.Frame(root, padding=8)
@@ -109,7 +110,7 @@ def main(cfg) -> None:
 
     t = cfg.telegram_signals
     ttk.Label(root, padding=(8, 0), text=f"الحدود: هامش {t.margin_pct_of_balance}% لكل صفقة · أقصى {t.max_concurrent} صفقات متزامنة · "
-                                         f"الأهداف والوقف كما في التوصية · محاكاة بدون أوامر حقيقية").pack(anchor="w")
+                                         f"الأهداف والوقف كما في التوصية · " + ("⚠ أوامر حقيقية على MEXC" if live else "محاكاة بدون أوامر حقيقية")).pack(anchor="w")
 
     cols = ("symbol", "side", "entry", "price", "lev", "margin", "stop", "tp", "pnl")
     names = ("العملة", "الاتجاه", "الدخول", "السعر", "رافعة", "الهامش $", "الوقف", "الأهداف", "الربح $")

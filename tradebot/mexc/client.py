@@ -152,3 +152,24 @@ class MexcClient:
     def cancel_stop(self, stop_order_id: int) -> dict:
         return self._request("POST", "/api/v1/private/stoporder/cancel",
                              body=[{"stopPlanOrderId": stop_order_id}], private=True)
+
+    # ── account / close orders (used by the Telegram-signals live executor) ──
+    def account_equity(self, currency: str = "USDT") -> float:
+        d = self._request("GET", f"/api/v1/private/account/asset/{currency}", private=True) or {}
+        return float(d.get("equity", d.get("availableBalance", 0.0)))
+
+    def submit_limit_close(self, symbol: str, side: int, vol: int, price: float, leverage: int,
+                           position_id: int, ext_id: str) -> dict:
+        """side: 2 = close short, 4 = close long. Reduce-only limit order at `price`."""
+        body = {"symbol": symbol, "price": price, "vol": vol, "leverage": leverage, "side": side,
+                "type": 1, "openType": 1, "positionId": position_id, "externalOid": ext_id}
+        return self._request("POST", "/api/v1/private/order/submit", body=body, private=True)
+
+    def submit_market_close(self, symbol: str, side: int, vol: int, last_price: float, leverage: int,
+                            position_id: int, ext_id: str) -> dict:
+        body = {"symbol": symbol, "price": last_price, "vol": vol, "leverage": leverage, "side": side,
+                "type": 5, "openType": 1, "positionId": position_id, "externalOid": ext_id}
+        return self._request("POST", "/api/v1/private/order/submit", body=body, private=True)
+
+    def cancel_orders(self, order_ids: list[int]) -> dict:
+        return self._request("POST", "/api/v1/private/order/cancel", body=list(order_ids), private=True)

@@ -1,8 +1,5 @@
-"""Trade the channel's signals in PAPER mode: fills are simulated with real MEXC 1m candles, no orders are sent.
-
-Real-order execution (dry_run = false) is intentionally NOT implemented here: it needs the owner's explicit approval
-(see README). build() refuses to run live.
-"""
+"""Trade the channel's signals. dry_run = true: PAPER (fills simulated with real MEXC 1m candles, no orders sent).
+dry_run = false: REAL orders on MEXC via live.LiveExchange (needs API keys in the environment)."""
 from __future__ import annotations
 
 import csv
@@ -216,10 +213,15 @@ class SignalTrader:
 
 
 def build(cfg):
-    if not cfg.trading.dry_run:
-        raise SystemExit("التنفيذ الحقيقي لهذه الوحدة غير مفعّل بعد (يحتاج موافقتك الصريحة). اترك trading.dry_run = true.")
     client = MexcClient(cfg.mexc)
     t = cfg.telegram_signals
     sp = Path(t.state_file)
     state = json.loads(sp.read_text()) if sp.exists() else {}
-    return SignalTrader(cfg, PaperExchange(cfg, client, state), Notifier(cfg), state, t.state_file, t.log_file)
+    if cfg.trading.dry_run:
+        return SignalTrader(cfg, PaperExchange(cfg, client, state), Notifier(cfg), state, t.state_file, t.log_file)
+    if not (client.api_key and client.api_secret):
+        raise SystemExit("التنفيذ الحقيقي يحتاج مفاتيح MEXC في متغيرات البيئة (انظر docs/WINDOWS_TELEGRAM.md).")
+    from .live import LiveExchange
+    nt = Notifier(cfg)
+    nt.tag = "[حقيقي] "
+    return SignalTrader(cfg, LiveExchange(cfg, client, state), nt, state, t.state_file, t.log_file)
