@@ -1,0 +1,25 @@
+<stdin>:10: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+Min15 30d ago, 1-day window: n=96 first=2026-09-18 13:15:00 msg=None
+Min15 90d ago, 1-day window: n=96 first=2026-07-20 13:15:00 msg=None
+Min15 180d ago, 1-day window: n=96 first=2026-04-21 13:15:00 msg=None
+Min15 365d ago, 1-day window: n=0 first=None msg=None
+Min15 540d ago, 1-day window: n=0 first=None msg=None
+Min15 700d ago, 1-day window: n=0 first=None msg=None
+Min15 2000-bar window ending now: n=2000 first=2026-09-27 17:15:00 msg=None
+Min15 3000-bar window ending now: n=2000 first=2026-09-27 17:15:00 msg=None
+Min60 30d ago, 1-day window: n=24 first=2026-09-18 14:00:00 msg=None
+Min60 90d ago, 1-day window: n=24 first=2026-07-20 14:00:00 msg=None
+Min60 180d ago, 1-day window: n=24 first=2026-04-21 14:00:00 msg=None
+Min60 365d ago, 1-day window: n=24 first=2025-10-18 14:00:00 msg=None
+Min60 540d ago, 1-day window: n=24 first=2025-04-26 14:00:00 msg=None
+Min60 700d ago, 1-day window: n=24 first=2024-11-17 14:00:00 msg=None
+Min60 2000-bar window ending now: n=2000 first=2026-07-27 06:00:00 msg=None
+Min60 3000-bar window ending now: n=2000 first=2026-07-27 06:00:00 msg=None
+Hour4 30d ago, 1-day window: n=6 first=2026-09-18 16:00:00 msg=None
+Hour4 90d ago, 1-day window: n=6 first=2026-07-20 16:00:00 msg=None
+Hour4 180d ago, 1-day window: n=6 first=2026-04-21 16:00:00 msg=None
+Hour4 365d ago, 1-day window: n=6 first=2025-10-18 16:00:00 msg=None
+Hour4 540d ago, 1-day window: n=6 first=2025-04-26 16:00:00 msg=None
+Hour4 700d ago, 1-day window: n=6 first=2024-11-17 16:00:00 msg=None
+Hour4 2000-bar window ending now: n=2000 first=2025-11-19 08:00:00 msg=None
+Hour4 3000-bar window ending now: n=2000 first=2025-11-19 08:00:00 msg=None
