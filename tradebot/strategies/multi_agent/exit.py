@@ -30,8 +30,9 @@ class ExitAgent:
     def assess(self, rec) -> Vote:
         """Risk opinion before publishing: average reward/risk over the targets vs the stop distance."""
         s = 1 if rec.side == "long" else -1
-        risk = s * (rec.zone[1] - rec.stop) if s == 1 else s * (rec.zone[0] - rec.stop)
-        if risk <= 0:
+        near, far = (rec.zone[0], rec.zone[1]) if s == 1 else (rec.zone[1], rec.zone[0])   # best / worst entry in the zone
+        if s * (near - rec.stop) <= 0:                      # an entry inside the zone could already be through the stop
             return Vote("exit", 0.0, True, "الوقف داخل منطقة الدخول")
-        rr = sum(s * (tp - (rec.zone[1] if s == 1 else rec.zone[0])) for tp in rec.tps) / len(rec.tps) / risk
+        risk = s * (far - rec.stop)
+        rr = sum(s * (tp - far) for tp in rec.tps) / len(rec.tps) / risk
         return Vote("exit", min(1.0, rr / float(self.c.target_rr)), rr < float(self.c.min_rr), f"R:R≈{rr:.2f}")
