@@ -14,7 +14,11 @@ def run_live_cli(cfg, args) -> None:
     logging.getLogger("multi_agent").setLevel(logging.INFO)
     logging.getLogger("telegram_signals").setLevel(logging.INFO)
     trader = build(cfg)
-    Orchestrator(cfg, MexcClient(cfg.mexc), trader).run(once=args.once)
+    reader = None
+    if cfg.agents.channel.enabled and cfg.telegram_signals.channel:
+        from tradebot.strategies.telegram_signals.source import make_reader
+        reader = make_reader(cfg.telegram_signals.channel)
+    Orchestrator(cfg, MexcClient(cfg.mexc), trader, reader).run(once=args.once)
 
 
 def run_backtest_cli(cfg, args) -> None:

@@ -26,6 +26,7 @@ class Recommendation:            # Technical -> News -> Entry
     reasons: list[str] = field(default_factory=list)
     created_ts: int = 0
     news_bias: float = 0.0
+    signal: object | None = None   # the channel Signal this recommendation came from (None = own analysis)
 
 
 @dataclass

@@ -10,7 +10,7 @@ import numpy as np
 from tradebot.data.klines import drop_unclosed, fetch_range
 from tradebot.indicators import atr_rma
 from tradebot.mexc.client import TF_SECONDS
-from tradebot.strategies.telegram_signals.parser import Signal
+from tradebot.strategies.telegram_signals.parser import Signal, parse_signal, parse_update
 
 from .entry import EntryAgent
 from .exit import ExitAgent
@@ -23,8 +23,9 @@ log = logging.getLogger("multi_agent")
 
 
 class Orchestrator:
-    def __init__(self, cfg, client, trader):
-        self.cfg, self.a, self.client, self.trader = cfg, cfg.agents, client, trader
+    def __init__(self, cfg, client, trader, reader=None):
+        self.cfg, self.a, self.client, self.trader, self.reader = cfg, cfg.agents, client, trader, reader
+        self._first = "seen" not in trader.state
         self.scanner, self.tech, self.news = ScannerAgent(cfg), TechnicalAgent(cfg), NewsAgent(cfg)
         self.entry, self.exit = EntryAgent(cfg), ExitAgent(cfg)
         self.pending: dict[str, Recommendation] = {}
@@ -35,6 +36,55 @@ class Orchestrator:
     def _klines(self, symbol: str, tf: str, bars: int, now: int) -> dict:
         step = TF_SECONDS[tf]
         return drop_unclosed(fetch_range(self.client, symbol, tf, int(now // step * step) - bars * step, now), tf, now)
+
+    # ── channel signals pass through the agents (entry timing, news veto); targets and stop stay the channel's ──
+    def poll_channel(self, now: int) -> None:
+        ch, nt, st = self.a.channel, self.trader.nt, self.trader.state
+        msgs = self.reader.fetch()
+        if self._first:                                         # never trade the existing backlog
+            st["seen"] = max([m["id"] for m in msgs] or [0])
+            self._first = False
+            nt.send(f"▶️ بدء متابعة القناة من الرسالة {st['seen']} (لن تُنفَّذ الرسائل السابقة)")
+        for m in msgs:
+            if m["id"] <= st["seen"]:
+                continue
+            st["seen"] = m["id"]
+            u = parse_update(m["text"], m["id"], m["ts"])
+            if u and u.symbol in self.pending and self.pending[u.symbol].signal is not None:
+                r = self.pending[u.symbol]
+                if r.side == "long" and u.new_stop > r.stop or r.side == "short" and u.new_stop < r.stop:
+                    r.stop = u.new_stop
+                continue
+            if u or not ch.refine_entry:
+                self.trader.on_message(m, now)                  # stop update of an open trade, or direct entry
+                continue
+            sig = parse_signal(m["text"], m["id"], m["ts"])
+            if sig:
+                self._queue_channel_signal(sig, now)
+
+    def _queue_channel_signal(self, sig: Signal, now: int) -> None:
+        nt, ch = self.trader.nt, self.a.channel
+        if sig.symbol in self.trader.open or sig.symbol in self.pending:
+            nt.send(f"⏭ تجاهل توصية {sig.symbol}: صفقة أو توصية قائمة")
+            return
+        s = 1 if sig.side == "long" else -1
+        if bool(ch.news_veto):
+            nv = self.news.verdict(sig.symbol)
+            if s * nv.bias <= -float(self.a.news.veto_bias):
+                nt.send(f"🚫 الأخبار ترفض توصية {sig.symbol} ({sig.side}): {nv.headlines[:1]}")
+                return
+        try:
+            k = self._klines(sig.symbol, "Min60", 60, now)
+            atr = float(atr_rma(k["high"], k["low"], k["close"], int(self.a.technical.atr_len))[-1])
+        except Exception:
+            atr = float("nan")
+        if not np.isfinite(atr) or atr <= 0:
+            atr = sig.entry * 0.01
+        z = float(ch.zone_pct) / 100.0
+        rec = Recommendation(sig.symbol, sig.side, 1.0, sig.entry, atr, (sig.entry * (1 - z), sig.entry * (1 + z)),
+                             sig.stop, list(sig.tps), ["توصية القناة"], now, signal=sig)
+        self.pending[sig.symbol] = rec
+        nt.send(f"📨 توصية القناة {sig.symbol} {sig.side} → وكيل الدخول يراقب منطقة {rec.zone[0]:.6g}–{rec.zone[1]:.6g}")
 
     def scan(self, now: int) -> None:
         nt = self.trader.nt
@@ -62,12 +112,16 @@ class Orchestrator:
             nt.send(f"📊 المحلل: {rec.symbol} {rec.side} درجة {rec.score:.2f} منطقة {rec.zone[0]:.6g}–{rec.zone[1]:.6g} "
                     f"وقف {rec.stop:.6g} ({'، '.join(rec.reasons)})")
         # keep only the best few
-        keep = sorted(self.pending.values(), key=lambda r: -r.score)[: int(self.a.max_pending)]
-        self.pending = {r.symbol: r for r in keep}
+        mine = [r for r in self.pending.values() if r.signal is None]
+        drop = {r.symbol for r in sorted(mine, key=lambda r: -r.score)[int(self.a.max_pending):]}
+        self.pending = {k: v for k, v in self.pending.items() if k not in drop}
 
     def try_entries(self, now: int) -> None:
         for sym, rec in list(self.pending.items()):
-            if now - rec.created_ts > int(self.a.entry.expire_sec):
+            ttl = int(self.a.channel.expire_sec) if rec.signal is not None else int(self.a.entry.expire_sec)
+            if now - rec.created_ts > ttl:
+                if rec.signal is not None:
+                    self.trader.nt.send(f"⌛ انتهت صلاحية توصية القناة {sym} دون دخول مناسب")
                 del self.pending[sym]
                 continue
             if len(self.trader.open) >= int(self.cfg.telegram_signals.max_concurrent):
@@ -82,16 +136,21 @@ class Orchestrator:
                 self.trader.nt.send(f"⏭ الدخول: {sym} تخطّي — {plan.reason}")
                 self.cooldown[sym] = now + int(self.a.cooldown_sec)
                 continue
-            self._seq += 1
-            sig = Signal(msg_id=-self._seq, ts=now, symbol=sym, side=rec.side, entry=price, stop=rec.stop,
-                         tps=rec.tps, leverage=None)
+            if rec.signal is not None:                      # channel trade: its stop, targets and leverage
+                o = rec.signal
+                sig = Signal(msg_id=o.msg_id, ts=now, symbol=sym, side=rec.side, entry=price, stop=rec.stop,
+                             tps=list(o.tps), leverage=o.leverage)
+            else:
+                self._seq += 1
+                sig = Signal(msg_id=-self._seq, ts=now, symbol=sym, side=rec.side, entry=price, stop=rec.stop,
+                             tps=rec.tps, leverage=None)
             self.trader.nt.send(f"🎯 الدخول: {sym} — {plan.reason}")
             self.trader.try_open(sig, now)
             self.cooldown[sym] = now + int(self.a.cooldown_sec)
 
     def manage_exits(self, now: int) -> None:
         for sym, pos in list(self.trader.open.items()):
-            if pos.closed or pos.signal_msg_id >= 0:        # only positions opened by the agents
+            if pos.closed or (pos.signal_msg_id >= 0 and not bool(self.a.channel.manage_exit)):
                 continue
             try:
                 k = self._klines(sym, "Min60", 60, now)
@@ -108,7 +167,12 @@ class Orchestrator:
                 self.trader.nt.send(f"🔧 الخروج: {sym} الوقف إلى {act.new_stop:.6g}")
 
     def cycle(self, now: int) -> None:
-        if now - self._last_scan >= int(self.a.scan_interval_sec):
+        if self.reader is not None:
+            try:
+                self.poll_channel(now)
+            except Exception:
+                log.exception("channel poll failed")
+        if bool(self.a.own_analysis) and now - self._last_scan >= int(self.a.scan_interval_sec):
             self._last_scan = now
             self.scan(now)
         self.try_entries(now)

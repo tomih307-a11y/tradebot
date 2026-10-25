@@ -30,6 +30,7 @@ class GuiController:
         self.trader = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self.orch = None
 
     @property
     def running(self) -> bool:
@@ -50,10 +51,20 @@ class GuiController:
         self._stop.set()
 
     def _loop(self) -> None:
-        reader = make_reader(self.channel)
+        reader = make_reader(self.channel)                  # created in this thread (Telethon needs its own loop)
+        self.orch = None
+        if self.cfg.has("agents") and self.cfg.agents.channel.enabled:
+            from tradebot.strategies.multi_agent.orchestrator import Orchestrator
+            self.orch = Orchestrator(self.cfg, self.trader.ex.client, self.trader, reader)
         poll = max(1, int(self.cfg.telegram_signals.poll_interval_sec))
         while not self._stop.is_set():
-            self.trader.run(reader, once=True)
+            if self.orch is not None:
+                try:
+                    self.orch.cycle(int(time.time()))
+                except Exception:
+                    self.q.put(("log", "❗ خطأ في الدورة — راجع السجل"))
+            else:
+                self.trader.run(reader, once=True)
             self._stop.wait(poll)
         self.q.put(("log", time.strftime("%H:%M:%S") + "  ⏹ تم الإيقاف"))
 
