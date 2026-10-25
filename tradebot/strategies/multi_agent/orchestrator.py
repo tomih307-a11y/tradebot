@@ -13,19 +13,26 @@ from tradebot.mexc.client import TF_SECONDS
 from tradebot.strategies.telegram_signals.parser import Signal, parse_signal, parse_update
 
 from .entry import EntryAgent
+from .consensus import Consensus
+from .execution import ExecutionAgent
 from .exit import ExitAgent
+from .ledger import Ledger
 from .news import NewsAgent
 from .scanner import ScannerAgent
 from .technical import TechnicalAgent
-from .types import Recommendation
+from .types import Recommendation, Vote
 
 log = logging.getLogger("multi_agent")
 
 
 class Orchestrator:
-    def __init__(self, cfg, client, trader, reader=None):
+    def __init__(self, cfg, client, trader, reader=None, execution=None):
         self.cfg, self.a, self.client, self.trader, self.reader = cfg, cfg.agents, client, trader, reader
         self._first = "seen" not in trader.state
+        self.consensus, self.ledger = Consensus(cfg), Ledger(self.a.consensus.ledger_file)
+        self.execution = execution if execution is not None else (ExecutionAgent(cfg, trader) if self.a.execution.enabled else None)
+        self.votes: dict[str, dict] = {}
+        trader.on_close = lambda pos: self.ledger.outcome(pos, self.votes.pop(pos.symbol, {}), int(time.time()))
         self.scanner, self.tech, self.news = ScannerAgent(cfg), TechnicalAgent(cfg), NewsAgent(cfg)
         self.entry, self.exit = EntryAgent(cfg), ExitAgent(cfg)
         self.pending: dict[str, Recommendation] = {}
@@ -89,6 +96,7 @@ class Orchestrator:
     def scan(self, now: int) -> None:
         nt = self.trader.nt
         cands = self.scanner.rank(self.client.tickers())
+        top = cands[0].score if cands else 0.0
         found = 0
         for cd in cands:
             if cd.symbol in self.pending or cd.symbol in self.trader.open or now < self.cooldown.get(cd.symbol, 0):
@@ -103,14 +111,25 @@ class Orchestrator:
             nv = self.news.verdict(cd.symbol)
             s = 1 if rec.side == "long" else -1
             rec.news_bias = nv.bias
-            if s * nv.bias <= -float(self.a.news.veto_bias):
-                nt.send(f"🚫 الأخبار ترفض {rec.symbol} ({rec.side}): {nv.headlines[:1]}")
+            rec.votes = [Vote("scanner", cd.score / top if top > 0 else 0.0, False, f"سيولة/حركة {cd.change_pct:+.1f}%"),
+                         Vote("technical", rec.score, False, "، ".join(rec.reasons)),
+                         Vote("news", (s * nv.bias + 1) / 2, s * nv.bias <= -float(self.a.news.veto_bias),
+                              (nv.headlines[:1] or ["لا أخبار"])[0]),
+                         self.exit.assess(rec)]
+            rec.confidence, ok, why = self.consensus.decide(rec.votes)
+            if not ok:
+                log.info("rejected %s %s conf=%.2f %s", rec.symbol, rec.side, rec.confidence, why)
+                if why:
+                    nt.send(f"🚫 رُفضت {rec.symbol} ({rec.side}) — {why}")
                 continue
-            rec.score += float(self.a.news.weight) * s * nv.bias
-            self.pending[rec.symbol] = rec
+            self.ledger.published(rec, now)
             found += 1
-            nt.send(f"📊 المحلل: {rec.symbol} {rec.side} درجة {rec.score:.2f} منطقة {rec.zone[0]:.6g}–{rec.zone[1]:.6g} "
-                    f"وقف {rec.stop:.6g} ({'، '.join(rec.reasons)})")
+            nt.send(f"✅ توصية {rec.symbol} {rec.side} · ثقة {rec.confidence:.0%} · منطقة {rec.zone[0]:.6g}–{rec.zone[1]:.6g} · "
+                    f"وقف {rec.stop:.6g} · أهداف {', '.join(f'{t:.6g}' for t in rec.tps)} · "
+                    + " | ".join(f"{v.agent} {v.score:.0%}" for v in rec.votes))
+            if self.execution is not None:
+                self.pending[rec.symbol] = rec
+                self.votes[rec.symbol] = {v.agent: round(v.score, 3) for v in rec.votes}
         # keep only the best few
         mine = [r for r in self.pending.values() if r.signal is None]
         drop = {r.symbol for r in sorted(mine, key=lambda r: -r.score)[int(self.a.max_pending):]}
@@ -124,7 +143,7 @@ class Orchestrator:
                     self.trader.nt.send(f"⌛ انتهت صلاحية توصية القناة {sym} دون دخول مناسب")
                 del self.pending[sym]
                 continue
-            if len(self.trader.open) >= int(self.cfg.telegram_signals.max_concurrent):
+            if not self.execution.can_open():
                 return
             price = self.client.last_price(sym)
             k1m = self._klines(sym, "Min1", 10, now)
@@ -137,15 +156,13 @@ class Orchestrator:
                 self.cooldown[sym] = now + int(self.a.cooldown_sec)
                 continue
             if rec.signal is not None:                      # channel trade: its stop, targets and leverage
+                from tradebot.strategies.telegram_signals.parser import Signal as _S
                 o = rec.signal
-                sig = Signal(msg_id=o.msg_id, ts=now, symbol=sym, side=rec.side, entry=price, stop=rec.stop,
-                             tps=list(o.tps), leverage=o.leverage)
+                self.trader.try_open(_S(msg_id=o.msg_id, ts=now, symbol=sym, side=rec.side, entry=price, stop=rec.stop,
+                                        tps=list(o.tps), leverage=o.leverage), now)
             else:
-                self._seq += 1
-                sig = Signal(msg_id=-self._seq, ts=now, symbol=sym, side=rec.side, entry=price, stop=rec.stop,
-                             tps=rec.tps, leverage=None)
-            self.trader.nt.send(f"🎯 الدخول: {sym} — {plan.reason}")
-            self.trader.try_open(sig, now)
+                self.trader.nt.send(f"🎯 الدخول: {sym} — {plan.reason}")
+                self.execution.open(rec, price, now)
             self.cooldown[sym] = now + int(self.a.cooldown_sec)
 
     def manage_exits(self, now: int) -> None:
@@ -160,10 +177,10 @@ class Orchestrator:
                 log.warning("exit failed %s: %s", sym, e)
                 continue
             if act.close:
-                self.trader.ex.close(pos, now)
+                self.execution.close(pos, now)
                 self.trader.nt.send(f"🚪 الخروج: {sym} إغلاق — {act.reason}")
             elif act.new_stop is not None:
-                self.trader.ex.move_stop(pos, act.new_stop)
+                self.execution.move_stop(pos, act.new_stop)
                 self.trader.nt.send(f"🔧 الخروج: {sym} الوقف إلى {act.new_stop:.6g}")
 
     def cycle(self, now: int) -> None:
@@ -175,8 +192,9 @@ class Orchestrator:
         if bool(self.a.own_analysis) and now - self._last_scan >= int(self.a.scan_interval_sec):
             self._last_scan = now
             self.scan(now)
-        self.try_entries(now)
-        self.manage_exits(now)
+        if self.execution is not None:
+            self.try_entries(now)
+            self.manage_exits(now)
         self.trader.tick(now)
 
     def run(self, once: bool = False) -> None:

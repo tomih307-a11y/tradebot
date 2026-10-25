@@ -117,6 +117,7 @@ class SignalTrader:
         self.cfg, self.t, self.ex, self.nt, self.state = cfg, cfg.telegram_signals, exchange, notifier, state
         self.state_path, self.log_path = state_path, log_path
         self.open: dict[str, Position] = {k: Position.from_dict(v) for k, v in state.get("open", {}).items()}
+        self.on_close = None                                   # optional callback(pos) when a trade closes
 
     def save(self) -> None:
         self.state["open"] = {k: v.to_dict() for k, v in self.open.items()}
@@ -195,6 +196,8 @@ class SignalTrader:
                     self.nt.send(f"{'🎯' if kind.startswith('tp') else '⛔'} {sym} {kind} @ {price:.6g} (حصة {frac:.0%}) · {pnl:+.3f}$")
             if pos.closed:
                 self._log_close(pos)
+                if self.on_close:
+                    self.on_close(pos)
                 self.nt.send(f"🏁 أُغلقت {sym}: {pos.exit_reason} · صافي {pos.realized:+.3f}$ · الرصيد {self.ex.balance():.2f}$")
                 del self.open[sym]
         self.save()

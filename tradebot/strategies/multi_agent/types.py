@@ -26,6 +26,8 @@ class Recommendation:            # Technical -> News -> Entry
     reasons: list[str] = field(default_factory=list)
     created_ts: int = 0
     news_bias: float = 0.0
+    votes: list = field(default_factory=list)
+    confidence: float = 0.0
     signal: object | None = None   # the channel Signal this recommendation came from (None = own analysis)
 
 
@@ -46,3 +48,11 @@ class ExitAction:                # Exit -> orchestrator
     new_stop: float | None = None
     close: bool = False
     reason: str = ""
+
+
+@dataclass
+class Vote:                      # every agent's opinion on a recommendation
+    agent: str
+    score: float                 # 0..1
+    veto: bool = False
+    note: str = ""

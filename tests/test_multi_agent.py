@@ -79,3 +79,39 @@ def test_news_lexicon():
     assert score_headlines(["SEC approves ETF", "Exchange hack drains funds", "Huge rally"]) > 0
     assert score_headlines(["Exchange hack", "Delist announced"]) == -1
     assert score_headlines(["nothing relevant"]) == 0
+
+
+def test_consensus_threshold_and_veto():
+    from tradebot.strategies.multi_agent.consensus import Consensus
+    from tradebot.strategies.multi_agent.types import Vote
+    c = Consensus(CFG)
+    good = [Vote("scanner", 0.8), Vote("technical", 0.9), Vote("news", 0.6), Vote("exit", 0.7)]
+    conf, ok, _ = c.decide(good)
+    assert ok and conf >= 0.65
+    assert not c.decide([Vote("scanner", 0.2), Vote("technical", 0.4), Vote("news", 0.5), Vote("exit", 0.3)])[1]   # low confidence
+    veto = good[:2] + [Vote("news", 0.0, True, "hack")] + good[3:]
+    conf2, ok2, why = c.decide(veto)
+    assert not ok2 and "news" in why
+
+
+def test_exit_agent_risk_vote():
+    ex = ExitAgent(CFG)
+    weak = ex.assess(rec())                     # zone (99,101), stop 98, tps 101/102/103: reward 1 vs risk 3 -> vetoed
+    assert weak.veto and weak.score < 0.5
+    r = rec(); r.tps = [102.0, 104.0, 106.0]    # avg reward 3 vs risk 3
+    v = ex.assess(r)
+    assert v.score == 1.0 and not v.veto
+    bad = rec(); bad.stop = 100.5               # stop inside the entry zone
+    assert ex.assess(bad).veto
+
+
+def test_ledger_roundtrip(tmp_path):
+    from tradebot.strategies.multi_agent.ledger import Ledger
+    from tradebot.strategies.multi_agent.types import Vote
+    l = Ledger(str(tmp_path / "l.csv"))
+    r = rec(); r.votes = [Vote("technical", 0.9)]; r.confidence = 0.8
+    l.published(r, 1_800_000_000)
+    p = pos(); p.realized = 0.5; p.exit_reason = "all_tp"
+    l.outcome(p, {"technical": 0.9}, 1_800_000_100)
+    rows = (tmp_path / "l.csv").read_text().strip().splitlines()
+    assert len(rows) == 3 and "published" in rows[1] and "all_tp" in rows[2]
