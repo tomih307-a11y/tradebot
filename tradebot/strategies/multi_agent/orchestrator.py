@@ -19,6 +19,7 @@ from .exit import ExitAgent
 from .ledger import Ledger
 from .news import NewsAgent
 from .scanner import ScannerAgent
+from .smc import SMCAgent
 from .technical import TechnicalAgent
 from .types import Recommendation, Vote
 
@@ -34,6 +35,7 @@ class Orchestrator:
         self.votes: dict[str, dict] = {}
         trader.on_close = lambda pos: self.ledger.outcome(pos, self.votes.pop(pos.symbol, {}), int(time.time()))
         self.scanner, self.tech, self.news = ScannerAgent(cfg), TechnicalAgent(cfg), NewsAgent(cfg)
+        self.smc = SMCAgent(cfg)
         self.entry, self.exit = EntryAgent(cfg), ExitAgent(cfg)
         self.pending: dict[str, Recommendation] = {}
         self.cooldown: dict[str, int] = {}
@@ -102,9 +104,12 @@ class Orchestrator:
             if cd.symbol in self.pending or cd.symbol in self.trader.open or now < self.cooldown.get(cd.symbol, 0):
                 continue
             try:
-                rec = self.tech.analyze(cd, self._klines(cd.symbol, "Min60", 300, now), self._klines(cd.symbol, "Hour4", 300, now), now)
+                k1h, k4h = self._klines(cd.symbol, "Min60", 300, now), self._klines(cd.symbol, "Hour4", 300, now)
+                primary = self.smc if self.a.analyst == "smc" else self.tech
+                rec = primary.analyze(cd, k1h, k4h, now)
+                confirm = self.tech.analyze(cd, k1h, k4h, now) if self.a.analyst == "smc" else None
             except Exception as e:
-                log.warning("technical failed %s: %s", cd.symbol, e)
+                log.warning("analysis failed %s: %s", cd.symbol, e)
                 continue
             if not rec:
                 continue
@@ -112,10 +117,14 @@ class Orchestrator:
             s = 1 if rec.side == "long" else -1
             rec.news_bias = nv.bias
             rec.votes = [Vote("scanner", cd.score / top if top > 0 else 0.0, False, f"سيولة/حركة {cd.change_pct:+.1f}%"),
-                         Vote("technical", rec.score, False, "، ".join(rec.reasons)),
+                         Vote(self.a.analyst, rec.score, False, "، ".join(rec.reasons)),
                          Vote("news", (s * nv.bias + 1) / 2, s * nv.bias <= -float(self.a.news.veto_bias),
                               (nv.headlines[:1] or ["لا أخبار"])[0]),
                          self.exit.assess(rec)]
+            if self.a.analyst == "smc":                      # the classic indicators act as a second opinion
+                ok_tech = confirm is not None and confirm.side == rec.side
+                rec.votes.append(Vote("technical", confirm.score if ok_tech else float(self.a.smc.unconfirmed_vote), False,
+                                      "يؤكد" if ok_tech else "لا تأكيد من المؤشرات"))
             rec.confidence, ok, why = self.consensus.decide(rec.votes)
             if not ok:
                 log.info("rejected %s %s conf=%.2f %s", rec.symbol, rec.side, rec.confidence, why)

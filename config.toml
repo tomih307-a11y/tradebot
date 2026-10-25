@@ -135,6 +135,7 @@ log_file = "reports/telegram_signals_trades.csv"
 # يستخدم حدود [telegram_signals] نفسها (هامش %، صفقات متزامنة) و dry_run في [trading].
 [agents]
 scan_interval_sec = 900            # كل كم ثانية يعيد الماسح والمحلل العمل
+analyst = "smc"                  # smc = SMC يولّد التوصية والمؤشرات الكلاسيكية تصوّت | technical = العكس
 own_analysis = true                # false = لا تحليل ذاتي، فقط توصيات القناة تمر عبر الوكلاء
 max_pending = 5                    # أقصى توصيات تنتظر نقطة دخول
 cooldown_sec = 3600                # لا إعادة تحليل/دخول نفس العملة قبل هذه المدة
@@ -191,9 +192,22 @@ news_veto = true                   # وكيل الأخبار يستطيع رفض
 manage_exit = true                 # وكيل الخروج يدير صفقاتها (وقف متحرك بعد الهدف1، خبر عكسي) دون تغيير الأهداف
 
 [agents.consensus]                 # تعاون الوكلاء: كل وكيل يصوّت 0..1، ويمكنه الفيتو
-weights = { scanner = 0.5, technical = 2.0, news = 1.0, exit = 1.0 }
+weights = { scanner = 0.5, smc = 2.5, technical = 1.0, news = 1.0, exit = 1.0 }
 min_confidence = 0.65              # لا تُنشر توصية بثقة أقل
 ledger_file = "reports/agents_ledger.csv"   # كل توصية منشورة + تصويت كل وكيل + نتيجتها (لمعرفة أي وكيل يصيب)
 
 [agents.execution]                 # الوكيل السادس: التداول الآلي
 enabled = true                     # false = نشر التوصيات فقط بدون أي صفقة
+
+[agents.smc]                       # تحليل Smart Money (إغلاقات الشموع فقط، بلا نظر للمستقبل)
+swing_len = 3                      # شموع على كل جانب لتأكيد قمة/قاع (فراكتل)
+min_bars = 120
+atr_len = 14
+event_max_age = 40                 # أقصى عمر (بالشموع) لآخر BOS/CHoCH ليُعتد به
+max_dist_atr = 3.0                 # أقصى بعد للسعر عن منطقة الدخول (ATR) لنشر التوصية
+sweep_lookback = 20
+require_htf = true                 # اتجاه 4س يجب أن يوافق هيكل الساعة
+min_score = 0.5                    # حد أدنى من 6 شروط
+stop_buffer_atr = 0.3              # الوقف خلف طرف المنطقة بهذه المسافة
+tp_r = [1.0, 2.0, 3.0]             # الأهداف كمضاعفات للمخاطرة
+unconfirmed_vote = 0.4             # تصويت المؤشرات الكلاسيكية حين لا تؤكد

@@ -28,6 +28,7 @@ class Recommendation:            # Technical -> News -> Entry
     news_bias: float = 0.0
     votes: list = field(default_factory=list)
     confidence: float = 0.0
+    retrace: bool = False          # zone is a retracement POI (price is expected to come back to it)
     signal: object | None = None   # the channel Signal this recommendation came from (None = own analysis)
 
 

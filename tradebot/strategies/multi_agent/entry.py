@@ -13,10 +13,13 @@ class EntryAgent:
         s = 1 if rec.side == "long" else -1
         lo, hi = rec.zone
         chase = float(self.c.max_chase_atr) * rec.atr
-        if s * (price - (hi if s == 1 else lo)) > chase:
-            return EntryPlan("skip", "السعر ركض بعيداً عن منطقة الدخول (لا مطاردة)")
         if s * (price - rec.stop) <= 0:
             return EntryPlan("skip", "السعر تجاوز الوقف")
+        if rec.retrace:                                  # POI setups: price is meant to come back to the zone
+            if s * (price - (hi if s == 1 else lo)) > 0:
+                return EntryPlan("wait", "انتظار عودة السعر إلى منطقة SMC")
+        elif s * (price - (hi if s == 1 else lo)) > chase:
+            return EntryPlan("skip", "السعر ركض بعيداً عن منطقة الدخول (لا مطاردة)")
         if not (lo <= price <= hi):
             return EntryPlan("wait", "انتظار عودة السعر إلى منطقة الدخول")
         n = int(self.c.confirm_candles)
