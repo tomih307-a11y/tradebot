@@ -83,6 +83,8 @@ class PaperExchange:
     def advance(self, pos: Position, now: int) -> list:
         """Feed all closed 1m candles since the last processed one. Returns new events [(ts, kind, price, frac, pnl)]."""
         n0 = len(pos.events)
+        if pos.closed:
+            return []
         try:
             d = self.client.klines(pos.symbol, "Min1", max(pos.last_ts, pos.opened_ts), now)
         except Exception as e:
@@ -100,6 +102,13 @@ class PaperExchange:
 
     def move_stop(self, pos: Position, price: float) -> None:
         pos.stop = price
+
+    def close(self, pos: Position, now: int) -> None:
+        s = pos.s
+        px = self.last_price(pos.symbol) * (1 - s * self.t.paper_slippage_pct / 100.0)
+        paper._close(pos, now, px, pos.remaining, "agent_exit", self.t.paper_fee_pct)
+        pos.closed, pos.exit_reason, pos.exit_ts = True, "agent_exit", now
+        self._apply(pos)
 
 
 # ───────────────────────── trader ─────────────────────────

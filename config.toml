@@ -130,3 +130,51 @@ paper_fee_pct = 0.04               # رسوم كل تنفيذ في المحاك�
 paper_slippage_pct = 0.02
 state_file = "state/telegram_signals_state.json"
 log_file = "reports/telegram_signals_trades.csv"
+
+# ───────── multi_agent: خمسة وكلاء مترابطين (python -m tradebot --strategy multi_agent live) ─────────
+# يستخدم حدود [telegram_signals] نفسها (هامش %، صفقات متزامنة) و dry_run في [trading].
+[agents]
+scan_interval_sec = 900            # كل كم ثانية يعيد الماسح والمحلل العمل
+max_pending = 5                    # أقصى توصيات تنتظر نقطة دخول
+cooldown_sec = 3600                # لا إعادة تحليل/دخول نفس العملة قبل هذه المدة
+
+[agents.scanner]
+top_n = 15
+min_turnover_usdt = 5000000        # سيولة 24س الدنيا
+w_move = 1.0                       # وزن حركة السعر 24س (%)
+w_liquidity = 2.0                  # وزن لوغاريتم السيولة
+
+[agents.technical]
+min_bars = 120
+ema_fast = 20
+ema_slow = 50
+atr_len = 14
+rsi_len = 14
+rsi_lo = 40                        # long: RSI بين lo و hi (short: المرآة)
+rsi_hi = 65
+pullback_atr = 1.0                 # أقصى بعد عن EMA السريع (بوحدات ATR) لاعتباره ارتداداً
+zone_atr = 0.3                     # نصف عرض منطقة الدخول حول EMA السريع
+stop_atr = 2.0
+tp_atr = [1.0, 2.0, 3.0]
+min_score = 0.8                    # الحد الأدنى من شروط التحليل المتحققة (من 5)
+
+[agents.news]
+feeds = ["https://www.coindesk.com/arc/outboundfeeds/rss/", "https://cointelegraph.com/rss"]
+per_feed = 30
+ttl_sec = 600
+max_headlines = 8
+veto_bias = 0.5                    # يرفض الدخول إذا الأخبار ضد الاتجاه بهذا القدر
+weight = 0.2                       # وزن الأخبار في درجة التوصية
+use_claude = false                 # true = يقيّم العناوين بـ Claude (يحتاج ANTHROPIC_API_KEY)
+claude_model = "claude-haiku-5-5"
+
+[agents.entry]
+confirm_candles = 2                # شموع دقيقة مغلقة متتالية مع الاتجاه
+max_chase_atr = 0.5                # لا يطارد سعراً ركض أبعد من هذا عن المنطقة
+expire_sec = 7200                  # صلاحية التوصية المنتظرة
+
+[agents.exit]
+trail_atr = 1.5                    # وقف متحرك بعد الهدف الأول
+max_hold_sec = 86400               # مدة قصوى لصفقة غير رابحة
+news_tighten_bias = 0.3            # خبر عكسي: الوقف إلى سعر الدخول إذا رابحة
+news_close_bias = 0.7              # خبر عكسي قوي: إغلاق

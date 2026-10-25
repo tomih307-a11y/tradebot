@@ -130,7 +130,17 @@ class LiveExchange:
                                             self.last_price(pos.symbol), pos.leverage, pos.ext["position_id"],
                                             f"cl-{pos.signal_msg_id}x{int(time.time()) % 100000}")
 
+    def close(self, pos: Position, now: int) -> None:
+        px = self.last_price(pos.symbol)
+        self._market_close(pos)
+        pnl = pos.remaining * pos.notional * pos.s * (px - pos.entry) / pos.entry
+        pos.realized += pnl
+        pos.events.append((now, "agent_exit", px, pos.remaining, pnl))
+        pos.remaining, pos.closed, pos.exit_ts, pos.exit_reason = 0.0, True, now, "agent_exit"
+
     def advance(self, pos: Position, now: int) -> list:
+        if pos.closed:
+            return []
         n0, ext, s = len(pos.events), pos.ext, pos.s
         mp = self._position(pos)
         hold = int(float(mp["holdVol"])) if mp else 0
