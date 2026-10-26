@@ -51,3 +51,13 @@ def test_market_mode_enters_at_open_and_summary():
     assert r["filled"] and r["fill_j"] == 0
     s = summarize([1.0, -1.0, 2.0])
     assert s["n"] == 3 and abs(s["total"] - 2.0) < 1e-9 and s["win"] > 60
+
+
+def test_tier_threshold_is_float_safe_and_ci_brackets_mean():
+    from smc_study2 import TIERS, boot_ci, tier_min
+    assert 4 / 6 >= tier_min(4) and 5 / 6 >= tier_min(5) and 3 / 6 >= tier_min(3)
+    assert 3 / 6 < tier_min(4) and 4 / 6 < tier_min(5)                 # tiers are really distinct
+    rng = np.random.default_rng(0)
+    tr = [{"T": 86400 * (i // 3), "R_net": float(x)} for i, x in enumerate(rng.normal(0.2, 1.0, 600))]
+    lo, hi = boot_ci(tr)
+    assert lo < np.mean([t["R_net"] for t in tr]) < hi and hi - lo < 0.5

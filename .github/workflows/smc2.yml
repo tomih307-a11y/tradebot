@@ -1,0 +1,40 @@
+name: smc-study2
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-smc2.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Restore downloaded candles
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: mexc-candles-smc2-${{ github.run_id }}
+          restore-keys: mexc-candles-
+      - name: Tests
+        run: python -m pytest tests/test_smc.py tests/test_smc_study.py -q
+      - name: SMC study v2
+        run: python tools/smc_study2.py --out reports/smc2 --days 150 --top 40 2>&1 | tee reports/smc2.log
+        continue-on-error: true
+      - name: Publish to branch smc2-results
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b smc2-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "smc2 study results" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin smc2-results

@@ -114,9 +114,9 @@ def summarize(rs):
             "mdd": float((np.maximum.accumulate(eq) - eq).max())}
 
 
-def generate(cfg, client, symbols, eval_start, now, args):
+def generate(cfg, client, symbols, eval_start, now, args, overrides=None):
     agent = SMCAgent(cfg)
-    agent.c = cfg.agents.smc.override(min_score=0.0)
+    agent.c = cfg.agents.smc.override(min_score=0.0, **(overrides or {}))
     out, diag = {}, {"bars": 0, "setups": 0, "symbols": 0}
     data_dir = cfg.pmo_zero_cross.backtest.data_dir
     for n_, sym in enumerate(symbols, 1):
@@ -151,7 +151,7 @@ def generate(cfg, client, symbols, eval_start, now, args):
     return out, diag
 
 
-def run_variant(data, cfg, min_score, be, mode, args):
+def run_variant(data, cfg, min_score, be, mode, args, tp_r=None, t_lo=0, t_hi=10 ** 12):
     """Sequential, non-overlapping per symbol. Returns list of trade dicts."""
     fee, slip = cfg.trading.taker_fee_pct, args.slip
     trades = []
@@ -159,7 +159,7 @@ def run_variant(data, cfg, min_score, be, mode, args):
         t15 = k15["time"]
         busy_until, used = 0, set()
         for T, r in recs:
-            if r.score < min_score or T < busy_until:
+            if r.score < min_score or T < busy_until or not (t_lo <= T < t_hi):
                 continue
             key = (round(r.zone[0], 8), round(r.zone[1], 8), r.side)
             if key in used:
@@ -168,14 +168,15 @@ def run_variant(data, cfg, min_score, be, mode, args):
             j0 = int(np.searchsorted(t15, T, side="left"))
             near = r.zone[1] if s == 1 else r.zone[0]
             risk = s * (near - r.stop)
-            tps = [near + s * m * risk for m in cfg.agents.smc.tp_r]
+            mults = list(tp_r if tp_r is not None else cfg.agents.smc.tp_r)
+            tps = [near + s * m * risk for m in mults]
             if mode == "zone":
                 res = simulate_trade(s, near, r.stop, tps, k15, j0, "limit", args.expire * 4, args.hold * 4, be, fee, slip)
             else:                                   # market baselines: same distances around the 1H close
                 ms = s if mode == "market" else -s
                 px = r.price
                 stop = px - ms * risk
-                t_ = [px + ms * m * risk for m in cfg.agents.smc.tp_r]
+                t_ = [px + ms * m * risk for m in mults]
                 res = simulate_trade(ms, px, stop, t_, k15, j0, "market", 0, args.hold * 4, be, fee, slip)
             used.add(key)
             if not res["filled"]:
