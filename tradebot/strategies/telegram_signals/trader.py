@@ -173,6 +173,11 @@ class SignalTrader:
             self.nt.send(f"❗ فشل فتح {sig.symbol}: {e}")
             return f"error: {e}"
         self.open[sig.symbol] = pos
+        liq_d = abs(pos.entry - pos.liq_price) / pos.entry * 100
+        stop_d = abs(pos.entry - pos.stop) / pos.entry * 100
+        if liq_d < stop_d:                                            # information only: the trade is still taken
+            self.nt.send(f"⚠️ {sig.symbol}: التصفية على بعد {liq_d:.1f}% وقف القناة على بعد {stop_d:.1f}% — "
+                         f"الرافعة {pos.leverage}x ستُصفّى الصفقة قبل بلوغ الوقف (الخسارة = كامل الهامش)")
         self.nt.send(f"✅ دخول {sig.symbol} {'لونق' if sig.side == 'long' else 'شورت'} @ {pos.entry:.6g} · رافعة {pos.leverage}x · "
                      f"هامش {pos.margin:.2f}$ · وقف {pos.stop:.6g} · أهداف {len(pos.tps)}")
         return "opened"

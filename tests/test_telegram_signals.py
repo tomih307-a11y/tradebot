@@ -224,3 +224,52 @@ def test_update_only_tightens(cfg, tmp_path):
     assert tr.open["Q_USDT"].stop == old
     tr.on_message({"id": 10, "ts": 1100, "text": "Q — الوقف انتقل إلى 0.0709"}, 1100)      # tighter: applied
     assert tr.open["Q_USDT"].stop == pytest.approx(0.0709)
+
+
+COMPACT = """🔥 MANA | LONG
+
+📥 الدخول: 0.101500
+⚙️ الرافعة: 50X
+
+🎯 الأهداف
+✅ TP1 — 0.104550 | +3% | ROI +150.2%
+✅ TP2 — 0.107590 | +6% | ROI +300%
+• TP3 — 0.110640 | +9% | ROI +450.2%
+
+🛑 الوقف: 0.096430 | -5%
+⏱ الشرط: إغلاق شمعة 4H تحت 0.096430
+الحالة: ضرب وقف الخسارة
+"""
+
+
+def test_compact_layout_parsed():
+    s = parse_signal(COMPACT, 3, 5)
+    assert (s.symbol, s.side, s.entry, s.stop, s.leverage) == ("MANA_USDT", "long", 0.1015, 0.09643, 50)
+    assert s.tps == [0.10455, 0.10759, 0.11064]
+
+
+def test_compact_without_colon_and_short():
+    t = COMPACT.replace("MANA | LONG", "US | SHORT").replace("الدخول: 0.101500", "الدخول0.101500") \
+        .replace("0.104550", "0.09").replace("0.107590", "0.08").replace("0.110640", "0.07").replace("0.096430", "0.11")
+    s = parse_signal(t, 1, 1)
+    assert s and s.side == "short" and s.entry == 0.1015 and s.stop == 0.11
+
+
+def test_reports_updates_and_vip_reposts_are_not_signals():
+    assert parse_signal("🔥 SAND — تم الهدف الرابع ✅\n\n✅ TP4 — 0.062720 | +12%\n📈 الحركة: +12%", 1, 1) is None
+    assert parse_signal("🔥 TST — تم الهدف الثاني ✅\n✅ TP1 — 0.019467 | +3%\n✅ TP2 — 0.020034 | +6%", 1, 1) is None
+    repost = "💎 صفقة مختارة من قناة GULF ELITE VIP الخاصة\nنُشرت هذه الفرصة أولًا لأعضاء القناة الخاصة.\n\n" + COMPACT
+    assert parse_signal(repost, 1, 1) is None
+    assert parse_signal("⏳ الصفقة تتنفس\nMANA — السعر الحالي 0.099210\n🛡️ الوقف كما هو عند 0.096430\n🎯 الهدف القادم TP4 — 0.113680", 1, 1) is None
+
+
+
+def test_warns_when_liquidation_is_nearer_than_the_stop(cfg, tmp_path):
+    tr, nt, cl = trader(cfg, tmp_path, FakeClient(100.0))
+    risky = Signal(10, 1000, "AAA_USDT", "long", 100.0, 95.0, [103.0], 20)       # liq ≈ 4.5% away, stop 5% away
+    assert tr.try_open(risky, 1000) == "opened"
+    assert any("التصفية" in m and "AAA_USDT" in m for m in nt.log)
+    tr2, nt2, _ = trader(cfg, tmp_path / "b" if (tmp_path / "b").mkdir() is None else tmp_path, FakeClient(100.0))
+    safe = Signal(11, 1000, "BBB_USDT", "long", 100.0, 95.0, [103.0], 5)         # liq ≈ 19.5% away
+    assert tr2.try_open(safe, 1000) == "opened"
+    assert not any("التصفية" in m for m in nt2.log)
