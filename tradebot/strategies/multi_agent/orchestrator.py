@@ -18,6 +18,7 @@ from .execution import ExecutionAgent
 from .exit import ExitAgent
 from .ledger import Ledger
 from .news import NewsAgent
+from .rules import RulesAgent
 from .scanner import ScannerAgent
 from .smc import SMCAgent
 from .technical import TechnicalAgent
@@ -35,7 +36,7 @@ class Orchestrator:
         self.votes: dict[str, dict] = {}
         trader.on_close = lambda pos: self.ledger.outcome(pos, self.votes.pop(pos.symbol, {}), int(time.time()))
         self.scanner, self.tech, self.news = ScannerAgent(cfg), TechnicalAgent(cfg), NewsAgent(cfg)
-        self.smc = SMCAgent(cfg)
+        self.smc, self.rules = SMCAgent(cfg), RulesAgent(cfg)
         self.entry, self.exit = EntryAgent(cfg), ExitAgent(cfg)
         self.pending: dict[str, Recommendation] = {}
         self.cooldown: dict[str, int] = {}
@@ -105,9 +106,12 @@ class Orchestrator:
                 continue
             try:
                 k1h, k4h = self._klines(cd.symbol, "Min60", 300, now), self._klines(cd.symbol, "Hour4", 300, now)
-                primary = self.smc if self.a.analyst == "smc" else self.tech
-                rec = primary.analyze(cd, k1h, k4h, now)
-                confirm = self.tech.analyze(cd, k1h, k4h, now) if self.a.analyst == "smc" else None
+                primary = {"smc": self.smc, "rules": self.rules}.get(self.a.analyst, self.tech)
+                if self.a.analyst == "rules":
+                    rec = primary.analyze(cd, k1h, k4h, now, lambda sym=cd.symbol: self._klines(sym, "Min15", int(self.a.rules.bars_15m), now))
+                else:
+                    rec = primary.analyze(cd, k1h, k4h, now)
+                confirm = self.tech.analyze(cd, k1h, k4h, now) if self.a.analyst in ("smc", "rules") else None
             except Exception as e:
                 log.warning("analysis failed %s: %s", cd.symbol, e)
                 continue
@@ -121,7 +125,7 @@ class Orchestrator:
                          Vote("news", (s * nv.bias + 1) / 2, s * nv.bias <= -float(self.a.news.veto_bias),
                               (nv.headlines[:1] or ["لا أخبار"])[0]),
                          self.exit.assess(rec)]
-            if self.a.analyst == "smc":                      # the classic indicators act as a second opinion
+            if self.a.analyst in ("smc", "rules"):           # the classic indicators act as a second opinion
                 ok_tech = confirm is not None and confirm.side == rec.side
                 rec.votes.append(Vote("technical", confirm.score if ok_tech else float(self.a.smc.unconfirmed_vote), False,
                                       "يؤكد" if ok_tech else "لا تأكيد من المؤشرات"))
@@ -134,7 +138,7 @@ class Orchestrator:
             self.ledger.published(rec, now)
             found += 1
             nt.send(f"✅ توصية {rec.symbol} {rec.side} · ثقة {rec.confidence:.0%} · منطقة {rec.zone[0]:.6g}–{rec.zone[1]:.6g} · "
-                    f"وقف {rec.stop:.6g} · أهداف {', '.join(f'{t:.6g}' for t in rec.tps)} · "
+                    f"وقف {rec.stop:.6g} · " + (f"أهداف {', '.join(f'{t:.6g}' for t in rec.tps)}" if rec.tps else "هدف مفتوح + وقف متحرك") + " · "
                     + " | ".join(f"{v.agent} {v.score:.0%}" for v in rec.votes))
             if self.execution is not None:
                 self.pending[rec.symbol] = rec

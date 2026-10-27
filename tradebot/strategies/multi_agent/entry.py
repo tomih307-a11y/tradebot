@@ -22,6 +22,8 @@ class EntryAgent:
             return EntryPlan("skip", "السعر ركض بعيداً عن منطقة الدخول (لا مطاردة)")
         if not (lo <= price <= hi):
             return EntryPlan("wait", "انتظار عودة السعر إلى منطقة الدخول")
+        if not rec.confirm:                              # the rules' own trigger (e.g. 15m PMO) already fired
+            return EntryPlan("market", "شروط المحلل كلها متحققة والسعر داخل المنطقة")
         n = int(self.c.confirm_candles)
         if len(k1m["close"]) < n:
             return EntryPlan("wait", "لا بيانات دقيقة كافية")

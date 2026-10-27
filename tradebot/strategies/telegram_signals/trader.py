@@ -75,8 +75,9 @@ class PaperExchange:
         px = self.last_price(sig.symbol)
         s = 1 if sig.side == "long" else -1
         fill = px * (1 + s * self.t.paper_slippage_pct / 100.0)
+        mode = self.t.stop_mode if sig.tps else "exchange"        # a trailing stop must act on touch, not on 4H closes
         pos = paper.open_position(sig, fill, self.balance(), self.t.margin_pct_of_balance, leverage, now,
-                                  self.t.stop_mode, self.t.paper_fee_pct, self.t.maintenance_margin)
+                                  mode, self.t.paper_fee_pct, self.t.maintenance_margin)
         self._apply(pos)
         return pos
 
@@ -160,7 +161,7 @@ class SignalTrader:
             s = 1 if sig.side == "long" else -1
             if abs(px - sig.entry) / sig.entry * 100 > float(self.t.max_entry_deviation_pct):
                 raise SkipSignal(f"السعر الحالي {px} بعيد عن الدخول {sig.entry}")
-            if s * (px - sig.tps[0]) >= 0 or s * (px - sig.stop) <= 0:
+            if (sig.tps and s * (px - sig.tps[0]) >= 0) or s * (px - sig.stop) <= 0:
                 raise SkipSignal("السعر تجاوز الهدف الأول أو الوقف")
             lev = self.leverage_for(sig, d)
             margin = self.ex.balance() * float(self.t.margin_pct_of_balance) / 100.0
@@ -179,7 +180,7 @@ class SignalTrader:
             self.nt.send(f"⚠️ {sig.symbol}: التصفية على بعد {liq_d:.1f}% وقف القناة على بعد {stop_d:.1f}% — "
                          f"الرافعة {pos.leverage}x ستُصفّى الصفقة قبل بلوغ الوقف (الخسارة = كامل الهامش)")
         self.nt.send(f"✅ دخول {sig.symbol} {'لونق' if sig.side == 'long' else 'شورت'} @ {pos.entry:.6g} · رافعة {pos.leverage}x · "
-                     f"هامش {pos.margin:.2f}$ · وقف {pos.stop:.6g} · أهداف {len(pos.tps)}")
+                     f"هامش {pos.margin:.2f}$ · وقف {pos.stop:.6g} · " + (f"أهداف {len(pos.tps)}" if pos.tps else "هدف مفتوح + وقف متحرك"))
         return "opened"
 
     def on_message(self, m: dict, now: int) -> str | None:

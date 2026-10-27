@@ -90,20 +90,20 @@ class LiveExchange:
             raise RuntimeError(f"لم يظهر مركز بعد الأمر {oid} — تحقق يدوياً من MEXC")
         pos = Position(symbol=sig.symbol, side=sig.side, entry=float(mp["holdAvgPrice"]), leverage=leverage,
                        margin=float(mp.get("im") or margin), tps=list(sig.tps), stop=sig.stop, opened_ts=now,
-                       stop_mode=self.t.stop_mode, liq_price=float(mp.get("liquidatePrice") or paper.liq_price(
+                       stop_mode=(self.t.stop_mode if sig.tps else "exchange"), liq_price=float(mp.get("liquidatePrice") or paper.liq_price(
                            float(mp["holdAvgPrice"]), sig.side, leverage, self.t.maintenance_margin)),
                        signal_msg_id=sig.msg_id, last_ts=now)
         total = int(float(mp["holdVol"]))
         pos.ext.update(position_id=int(mp["positionId"]), vol=total, unit=unit, tp_orders=[], stop_id=None, cs=cs)
         try:
-            share = max(1, total // n)
+            share = max(1, total // n) if n else 0
             for i, tp in enumerate(sig.tps):
                 v = total - share * (n - 1) if i == n - 1 else share
                 price = _round(tp, unit, up=(s == -1))
                 r = self.client.submit_limit_close(sig.symbol, self._close_side(pos), v, price, leverage,
                                                    pos.ext["position_id"], f"tp{i + 1}-{sig.msg_id}x{now % 100000}")
                 pos.ext["tp_orders"].append({"id": _oid(r), "vol": v})
-            if self.t.stop_mode == "exchange":
+            if self.t.stop_mode == "exchange" or not sig.tps:
                 r = self.client.place_stop(pos.ext["position_id"], total, _round(sig.stop, unit, up=(s == 1)))
                 pos.ext["stop_id"] = _oid(r) if r is not None else None
         except Exception:
@@ -164,7 +164,7 @@ class LiveExchange:
                 self.move_stop(pos, pos.entry)
         if hold <= 0:
             pos.closed, pos.exit_ts = True, now
-            pos.exit_reason = "all_tp" if pos.tp_hit >= len(pos.tps) else (pos.exit_reason or "closed_on_exchange")
+            pos.exit_reason = "all_tp" if (pos.tps and pos.tp_hit >= len(pos.tps)) else (pos.exit_reason or "closed_on_exchange")
             return pos.events[n0:]
         pos.remaining = round(hold / ext["vol"], 12)
         # channel rule: a CLOSED 4H candle beyond the stop -> market exit

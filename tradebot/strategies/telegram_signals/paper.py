@@ -112,7 +112,7 @@ def step(p: Position, candle, cfg_ts) -> None:
         _close(p, ts, px * (1 - s * slip), p.remaining, "stop", fee)
         return finish("stop")
     # 3) targets, in order
-    share = 1.0 / len(p.tps)
+    share = 1.0 / len(p.tps) if p.tps else 0.0                 # no targets = open-ended (trailing-stop) position
     while p.tp_hit < len(p.tps) and s * (favourable - p.tps[p.tp_hit]) >= 0:
         last = p.tp_hit == len(p.tps) - 1
         _close(p, ts, p.tps[p.tp_hit], p.remaining if last else min(share, p.remaining), f"tp{p.tp_hit + 1}", fee)

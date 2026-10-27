@@ -134,8 +134,8 @@ log_file = "reports/telegram_signals_trades.csv"
 # ───────── multi_agent: خمسة وكلاء مترابطين (python -m tradebot --strategy multi_agent live) ─────────
 # يستخدم حدود [telegram_signals] نفسها (هامش %، صفقات متزامنة) و dry_run في [trading].
 [agents]
-scan_interval_sec = 900            # كل كم ثانية يعيد الماسح والمحلل العمل
-analyst = "smc"                  # smc = SMC يولّد التوصية والمؤشرات الكلاسيكية تصوّت | technical = العكس
+scan_interval_sec = 120            # كل كم ثانية يعيد الماسح والمحلل العمل (قصير ليلتقط إغلاق شمعة 15د بسرعة)
+analyst = "rules"                # rules = شروطك أنت ([agents.rules]) | smc = وكيل SMC الآلي | technical = المؤشرات الكلاسيكية
 own_analysis = true                # false = لا تحليل ذاتي، فقط توصيات القناة تمر عبر الوكلاء
 max_pending = 5                    # أقصى توصيات تنتظر نقطة دخول
 cooldown_sec = 3600                # لا إعادة تحليل/دخول نفس العملة قبل هذه المدة
@@ -180,6 +180,8 @@ trail_atr = 1.5                    # وقف متحرك بعد الهدف الأ�
 max_hold_sec = 86400               # مدة قصوى لصفقة غير رابحة
 news_tighten_bias = 0.3            # خبر عكسي: الوقف إلى سعر الدخول إذا رابحة
 news_close_bias = 0.7              # خبر عكسي قوي: إغلاق
+open_trail_atr = 2.0               # صفقة بهدف مفتوح: الوقف يلحق السعر بهذه المسافة (ATR ساعة)
+open_trail_activation_r = 1.0      # يبدأ الوقف المتحرك بعد ربح بقدر هذا المضاعف من المخاطرة الأولية
 target_rr = 1.0                    # عائد/مخاطرة متوسط الأهداف الذي يعطي تصويتاً كاملاً
 min_rr = 0.5                       # أقل من هذا: وكيل الخروج يرفض التوصية (فيتو)
 
@@ -192,7 +194,7 @@ news_veto = true                   # وكيل الأخبار يستطيع رفض
 manage_exit = true                 # وكيل الخروج يدير صفقاتها (وقف متحرك بعد الهدف1، خبر عكسي) دون تغيير الأهداف
 
 [agents.consensus]                 # تعاون الوكلاء: كل وكيل يصوّت 0..1، ويمكنه الفيتو
-weights = { scanner = 0.5, smc = 2.5, technical = 1.0, news = 1.0, exit = 1.0 }
+weights = { scanner = 0.5, rules = 2.5, smc = 2.5, technical = 1.0, news = 1.0, exit = 1.0 }
 min_confidence = 0.65              # لا تُنشر توصية بثقة أقل
 ledger_file = "reports/agents_ledger.csv"   # كل توصية منشورة + تصويت كل وكيل + نتيجتها (لمعرفة أي وكيل يصيب)
 
@@ -211,3 +213,21 @@ min_score = 0.5                    # حد أدنى من 6 شروط
 stop_buffer_atr = 0.3              # الوقف خلف طرف المنطقة بهذه المسافة
 tp_r = [1.0, 2.0, 3.0]             # الأهداف كمضاعفات للمخاطرة
 unconfirmed_vote = 0.4             # تصويت المؤشرات الكلاسيكية حين لا تؤكد
+
+[agents.rules]                     # شروطك: لا تُنشر توصية إلا إذا تحققت كلها
+conditions = ["price_in_ob_4h", "pmo15_zero_touch"]   # 1) السعر داخل أوردر بلوك 4س  2) فريم الدخول 15د: PMO عبر الصفر ثم لمسه (أضف شروطاً هنا لاحقاً)
+swing_len = 3                      # شموع 4س على كل جانب لتأكيد القمة/القاع
+min_bars = 60
+max_age_bars = 200                 # أقصى عمر للـOB بشموع 4س (200 ≈ 33 يوماً)
+ob_method = "extreme"              # extreme = شمعة أعلى قمة/أدنى قاع في الموجة (كما LuxAlgo) | last_opposite = آخر شمعة معاكسة
+mitigation = "wick"                # wick = ذيل خلف الطرف البعيد يُسقطها | close = إغلاق خلفه | none
+atr_len = 14
+stop_buffer_atr = 0.3              # الوقف خلف الطرف البعيد للـOB بهذه المسافة (ATR 4س)
+tp_r = [1.0, 2.0, 3.0]
+# شرط 2: فريم الدخول 15د — PMO قطع خط الإشارة (للأعلى للشراء) ثم أول لمسة لخط الصفر = توصية فورية
+bars_15m = 700                     # شموع 15د المُحمَّلة (الإحماء 300 + مساحة للبحث)
+min_bars_15m = 400
+pmo_cross_max_age_bars = 96        # أقصى عمر لتقاطع PMO مع الإشارة قبل اللمس (96 شمعة 15د = 24 ساعة)
+pmo_touch_window_bars = 1          # لمس الصفر يجب أن يكون في آخر N شمعة 15د مغلقة (1 = الشمعة الأخيرة، أي فوراً)
+entry_tf_trigger = true            # true = إشارة 15د هي الدخول، بدون تأكيد شموع الدقيقة
+open_target = true                 # true = بلا أهداف ثابتة، وقف متحرك فقط ([agents.exit] open_trail_*) | false = tp_r
