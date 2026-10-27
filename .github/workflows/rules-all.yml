@@ -1,0 +1,40 @@
+name: rules-study-all
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-rules-all.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Restore downloaded candles
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: mexc-candles-rulesall-${{ github.run_id }}
+          restore-keys: mexc-candles-
+      - name: Tests
+        run: python -m pytest tests/test_rules.py tests/test_rules_study.py -q
+      - name: Rules study
+        run: python tools/rules_study.py --out reports/rules_all --days 150 --top 5000 2>&1 | tee reports/rules_all.log
+        continue-on-error: true
+      - name: Publish to branch rules-all-results
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b rules-all-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "rules all-contracts study results" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin rules-all-results

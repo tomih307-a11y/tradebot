@@ -185,7 +185,8 @@ def main():
         print(f"  [{n_}/{len(symbols)}] {sym}: {len(trig['wick'][sym])} triggers", flush=True)
 
     L = ["# اختبار شروطك: OB على 4س + PMO على 15د (أول لمسة للصفر) — هدف مفتوح ووقف متحرك", ""]
-    L.append(f"- العقود: {len(data)} من أعلى {a.top} سيولة (انحياز بقاء ممكن) · آخر {a.days} يوماً · إجمالي الإشارات (wick): {n_ev}")
+    scope = f"كل عقود USDT المتاحة ({len(tick)})" if a.top >= len(tick) else f"أعلى {a.top} سيولة"
+    L.append(f"- العقود: {len(data)} مُحلَّلة من {scope} (استُبعد ما ليس له تاريخ 15د كافٍ) · عقود موجودة اليوم فقط ⇒ انحياز بقاء ممكن · آخر {a.days} يوماً · إجمالي الإشارات (wick): {n_ev}")
     L.append(f"- **الإعدادات ثابتة** من config.toml (لم تُضبط على النتائج): mitigation={rc.mitigation}، ob_method={rc.ob_method}، وقف خلف الـOB بـ{rc.stop_buffer_atr}×ATR(4س)، "
              f"وقف متحرك {base['trail_atr']}×ATR(ساعة) بعد ربح {base['act_r']}R، إغلاق الخاسرة بعد {int(ex.max_hold_sec) // 3600} ساعة، أقصى احتفاظ {a.max_hold_days} أيام.")
     L.append(f"- دخول عند فتح الشمعة التالية (+{a.slip}% انزلاق)، رسوم Taker {cfg.trading.taker_fee_pct}% للجهتين، صفقة واحدة لكل عملة. R = المخاطرة الأولية.")
@@ -221,6 +222,15 @@ def main():
         for k, v in sorted({r_["reason"]: [] for r_ in val}.items()):
             xs = [t["R_net"] for t in val if t["reason"] == k]
             L.append(f"| {k} | {len(xs)} | {np.mean(xs):+.3f} |")
+        rank = {sym: i + 1 for i, sym in enumerate(symbols)}
+        L.append("\n| شريحة السيولة (ترتيب حجم تداول 24س اليوم) | العقود | الصفقات | صافي R | إجمالي R | ربح % |\n|---|---|---|---|---|---|")
+        for nm, lo_, hi_ in (("1–40", 1, 40), ("41–150", 41, 150), ("151–400", 151, 400), ("401+", 401, 10 ** 6)):
+            xs = [t for t in val if lo_ <= rank[t["symbol"]] <= hi_]
+            if xs:
+                L.append(f"| {nm} | {len({t['symbol'] for t in xs})} | {len(xs)} | {np.mean([t['R_net'] for t in xs]):+.3f} | "
+                         f"{np.mean([t['R_gross'] for t in xs]):+.3f} | {np.mean([t['R_net'] > 0 for t in xs]) * 100:.0f}% |")
+            else:
+                L.append(f"| {nm} | 0 | 0 | - | - | - |")
         L.append("\n| الاتجاه | عدد | متوسط R |\n|---|---|---|")
         for sd in ("long", "short"):
             xs = [t["R_net"] for t in val if t["side"] == sd]
