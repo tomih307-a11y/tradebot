@@ -105,7 +105,8 @@ class Orchestrator:
             if cd.symbol in self.pending or cd.symbol in self.trader.open or now < self.cooldown.get(cd.symbol, 0):
                 continue
             try:
-                k1h, k4h = self._klines(cd.symbol, "Min60", 300, now), self._klines(cd.symbol, "Hour4", 300, now)
+                nb = int(self.a.rules.htf_bars) if self.a.analyst == "rules" else 300        # higher-timeframe PMO needs its warm-up
+                k1h, k4h = self._klines(cd.symbol, "Min60", nb, now), self._klines(cd.symbol, "Hour4", nb, now)
                 primary = {"smc": self.smc, "rules": self.rules}.get(self.a.analyst, self.tech)
                 if self.a.analyst == "rules":
                     rec = primary.analyze(cd, k1h, k4h, now, lambda sym=cd.symbol: self._klines(sym, "Min15", int(self.a.rules.bars_15m), now))

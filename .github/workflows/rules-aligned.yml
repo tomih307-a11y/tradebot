@@ -1,0 +1,48 @@
+name: rules-aligned-study
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-rules-aligned.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        htf: [Min60, Hour4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Restore downloaded candles
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: mexc-candles-aligned-${{ matrix.htf }}-${{ github.run_id }}
+          restore-keys: |
+            mexc-candles-aligned-
+            mexc-candles-rulesall-
+      - name: Tests
+        run: python -m pytest tests/test_rules.py tests/test_rules_study.py -q
+      - name: Study (4H order block + 15m cross above zero + higher-timeframe PMO above zero)
+        run: |
+          python tools/rules_study.py --out reports/aligned_${{ matrix.htf }} --days 150 --top 5000 \
+            --conditions price_in_ob_4h,pmo_cross_zero_aligned --htf ${{ matrix.htf }} --mitigations wick 2>&1 | tee reports/aligned_${{ matrix.htf }}.log
+        continue-on-error: true
+      - name: Publish to branch
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b rules-aligned-${{ matrix.htf }}-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "aligned study results (${{ matrix.htf }})" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin rules-aligned-${{ matrix.htf }}-results

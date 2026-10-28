@@ -29,7 +29,7 @@ from tradebot.config import load_config                                 # noqa: 
 from tradebot.data.klines import get_klines                              # noqa: E402
 from tradebot.indicators import atr_rma, pmo                             # noqa: E402
 from tradebot.mexc.client import MexcClient                              # noqa: E402
-from tradebot.strategies.multi_agent.rules import RulesAgent, signal_cross_then_zero_touch   # noqa: E402
+from tradebot.strategies.multi_agent.rules import RulesAgent, cross_above_zero, signal_cross_then_zero_touch   # noqa: E402
 from tradebot.strategies.multi_agent.types import Candidate              # noqa: E402
 
 M15, H1, H4 = 900, 3600, 14400
@@ -70,30 +70,47 @@ def simulate_open(s, stop0, o, h, l, c, atr, j0, trail_atr, act_r, max_hold, los
             "bars": k_exit - j0, "risk_pct": risk / px_in * 100.0}
 
 
-def find_triggers(cfg, sym, k15, k4, eval_start, mitigation):
+def find_triggers(cfg, sym, k15, k4, k1, eval_start, mitigation, conditions, htf):
     """Calls the live RulesAgent on the windows the bot would see. -> list of dict(j, T, side, stop, zone)."""
     ind, rc = cfg.pmo_zero_cross.indicator, cfg.agents.rules
     p, sg, _ = pmo(k15["close"], ind.roc_smooth_len, ind.roc_scale, ind.pmo_smooth_len, ind.signal_len)
     p, sg = p.copy(), sg.copy()
     p[: int(ind.warmup_bars)] = np.nan
     sg[: int(ind.warmup_bars)] = np.nan
+    aligned = "pmo_cross_zero_aligned" in conditions
     agent = RulesAgent(cfg)
-    agent.c = rc.override(mitigation=mitigation)
-    t15, close4 = k15["time"], k4["time"] + H4
+    agent.c = rc.override(mitigation=mitigation, conditions=list(conditions), htf=htf)
+    t15, close4, close1 = k15["time"], k4["time"] + H4, k1["time"] + H1
+    phtf = None
+    if aligned:                                           # full-history HTF PMO mapped to each 15m close: a cheap pre-filter only
+        hk, hstep = (k1, H1) if htf == "Min60" else (k4, H4)
+        ph, _, _ = pmo(hk["close"], ind.roc_smooth_len, ind.roc_scale, ind.pmo_smooth_len, ind.signal_len)
+        ph = ph.copy()
+        ph[: int(ind.warmup_bars)] = np.nan
+        ix = np.searchsorted(hk["time"] + hstep, t15 + M15, side="right") - 1
+        phtf = np.where(ix >= 0, ph[np.clip(ix, 0, None)], np.nan)
     out = []
-    bars15, bars4 = int(rc.bars_15m), 300
+    bars15, bars4 = int(rc.bars_15m), (int(rc.htf_bars) if aligned else 300)
     for j in range(int(ind.warmup_bars) + 1, len(t15)):
         T = int(t15[j]) + M15
         if T < eval_start:
             continue
-        if not any(signal_cross_then_zero_touch(p[: j + 1], sg[: j + 1], s, int(rc.pmo_cross_max_age_bars), int(rc.pmo_touch_window_bars)) for s in (1, -1)):
+        if aligned:
+            ok = any(cross_above_zero(p[: j + 1], sg[: j + 1], s_, int(rc.pmo_cross_window_bars)) is not None and phtf[j] * s_ > 0 for s_ in (1, -1))
+        else:
+            ok = any(signal_cross_then_zero_touch(p[: j + 1], sg[: j + 1], s_, int(rc.pmo_cross_max_age_bars), int(rc.pmo_touch_window_bars)) for s_ in (1, -1))
+        if not ok:
             continue
         i4 = int(np.searchsorted(close4, T, side="right"))
         if i4 < 60 or j + 1 < bars15:
             continue
         w4 = {f: k4[f][max(0, i4 - bars4):i4] for f in ("time", "open", "high", "low", "close")}
         w15 = {f: k15[f][j + 1 - bars15:j + 1] for f in ("time", "open", "high", "low", "close")}
-        rec = agent.analyze(Candidate(sym, float(k15["close"][j]), 0, 0, 0), None, w4, T, w15)
+        w1 = None
+        if aligned:
+            i1 = int(np.searchsorted(close1, T, side="right"))
+            w1 = {f: k1[f][max(0, i1 - int(rc.htf_bars)):i1] for f in ("time", "open", "high", "low", "close")}
+        rec = agent.analyze(Candidate(sym, float(k15["close"][j]), 0, 0, 0), w1, w4, T, w15)
         if rec:
             out.append({"j": j, "T": T, "side": rec.side, "stop": rec.stop, "zone": rec.zone})
     return out
@@ -150,6 +167,9 @@ def main():
     ap.add_argument("--slip", type=float, default=0.05)
     ap.add_argument("--max-hold-days", type=int, default=10)
     ap.add_argument("--val-pct", type=int, default=40)
+    ap.add_argument("--conditions", default="price_in_ob_4h,pmo15_zero_touch")
+    ap.add_argument("--htf", default="Min60", help="Min60 | Hour4 (used by pmo_cross_zero_aligned)")
+    ap.add_argument("--mitigations", default="wick,close")
     a = ap.parse_args()
     cfg = load_config(a.config)
     client = MexcClient(cfg.mexc)
@@ -157,19 +177,20 @@ def main():
     eval_start = now - a.days * 86400
     split = eval_start + (now - eval_start) * (100 - a.val_pct) // 100
     ex, rc = cfg.agents.exit, cfg.agents.rules
+    conditions, mits = [c.strip() for c in a.conditions.split(",")], [m.strip() for m in a.mitigations.split(",")]
     base = {"trail_atr": float(ex.open_trail_atr), "act_r": float(ex.open_trail_activation_r), "slip": a.slip,
             "max_hold": a.max_hold_days * 96, "loser_bars": int(ex.max_hold_sec) // M15}
     tick = [t for t in client.tickers() if str(t.get("symbol", "")).endswith("_USDT")]
     tick.sort(key=lambda t: -float(t.get("amount24") or 0))
     symbols = [t["symbol"] for t in tick[: a.top]]
     dd = cfg.pmo_zero_cross.backtest.data_dir
-    data, trig = {}, {m: {} for m in ("wick", "close")}
+    data, trig = {}, {m: {} for m in mits}
     n_ev = 0
     for n_, sym in enumerate(symbols, 1):
         try:
             k15 = get_klines(client, dd, sym, "Min15", eval_start - 900 * M15, now)
-            k4 = get_klines(client, dd, sym, "Hour4", eval_start - 80 * 86400, now)
-            k1 = get_klines(client, dd, sym, "Min60", eval_start - 30 * 86400, now)
+            k4 = get_klines(client, dd, sym, "Hour4", eval_start - 135 * 86400, now)
+            k1 = get_klines(client, dd, sym, "Min60", eval_start - 45 * 86400, now)
         except Exception as e:
             print(f"  {sym}: data failed {e}", flush=True)
             continue
@@ -179,22 +200,22 @@ def main():
         idx = np.searchsorted(k1["time"] + H1, k15["time"] + M15, side="right") - 1
         atr15 = np.where(idx >= 0, a1[np.clip(idx, 0, None)], np.nan)
         data[sym] = {"o": k15["open"], "h": k15["high"], "l": k15["low"], "c": k15["close"], "atr": atr15}
-        for m in trig:
-            trig[m][sym] = find_triggers(cfg, sym, k15, k4, eval_start, m)
-        n_ev += len(trig["wick"][sym])
-        print(f"  [{n_}/{len(symbols)}] {sym}: {len(trig['wick'][sym])} triggers", flush=True)
+        for m in mits:
+            trig[m][sym] = find_triggers(cfg, sym, k15, k4, k1, eval_start, m, conditions, a.htf)
+        n_ev += len(trig[mits[0]][sym])
+        print(f"  [{n_}/{len(symbols)}] {sym}: {len(trig[mits[0]][sym])} triggers", flush=True)
 
-    L = ["# اختبار شروطك: OB على 4س + PMO على 15د (أول لمسة للصفر) — هدف مفتوح ووقف متحرك", ""]
+    L = [f"# اختبار شروطك: {' + '.join(conditions)}" + (f" (الفريم الأكبر: {a.htf})" if "pmo_cross_zero_aligned" in conditions else "") + " — هدف مفتوح ووقف متحرك", ""]
     scope = f"كل عقود USDT المتاحة ({len(tick)})" if a.top >= len(tick) else f"أعلى {a.top} سيولة"
-    L.append(f"- العقود: {len(data)} مُحلَّلة من {scope} (استُبعد ما ليس له تاريخ 15د كافٍ) · عقود موجودة اليوم فقط ⇒ انحياز بقاء ممكن · آخر {a.days} يوماً · إجمالي الإشارات (wick): {n_ev}")
-    L.append(f"- **الإعدادات ثابتة** من config.toml (لم تُضبط على النتائج): mitigation={rc.mitigation}، ob_method={rc.ob_method}، وقف خلف الـOB بـ{rc.stop_buffer_atr}×ATR(4س)، "
+    L.append(f"- العقود: {len(data)} مُحلَّلة من {scope} (استُبعد ما ليس له تاريخ 15د كافٍ) · عقود موجودة اليوم فقط ⇒ انحياز بقاء ممكن · آخر {a.days} يوماً · إجمالي الإشارات ({mits[0]}): {n_ev}")
+    L.append(f"- **الإعدادات ثابتة** من config.toml (لم تُضبط على النتائج): mitigation={mits[0]}، ob_method={rc.ob_method}، وقف خلف الـOB بـ{rc.stop_buffer_atr}×ATR(4س)، "
              f"وقف متحرك {base['trail_atr']}×ATR(ساعة) بعد ربح {base['act_r']}R، إغلاق الخاسرة بعد {int(ex.max_hold_sec) // 3600} ساعة، أقصى احتفاظ {a.max_hold_days} أيام.")
     L.append(f"- دخول عند فتح الشمعة التالية (+{a.slip}% انزلاق)، رسوم Taker {cfg.trading.taker_fee_pct}% للجهتين، صفقة واحدة لكل عملة. R = المخاطرة الأولية.")
     L.append("- **غير مُحاكى:** الأخبار، تصويت الوكلاء الآخرين، حد صفقتين متزامنتين، التمويل. «إجمالي» = قبل الرسوم والانزلاق.\n")
-    main_trades = replay(data, trig["wick"], base, cfg)
+    main_trades = replay(data, trig[mits[0]], base, cfg)
     sel = [t for t in main_trades if t["T"] < split]
     val = [t for t in main_trades if t["T"] >= split]
-    rev_val = [t for t in replay(data, trig["wick"], base, cfg, reverse=True) if t["T"] >= split]
+    rev_val = [t for t in replay(data, trig[mits[0]], base, cfg, reverse=True) if t["T"] >= split]
     L.append("## النتيجة الأساسية (نافذة التحقق = آخر %d%% من الفترة)\n" % a.val_pct)
     L.append(HEAD)
     L.append(row("شروطك (التحقق)", stats(val)))
@@ -237,7 +258,7 @@ def main():
             L.append(f"| {sd} | {len(xs)} | {np.mean(xs):+.3f} |" if xs else f"| {sd} | 0 | - |")
     L.append("\n## حساسية الإعدادات (للشفافية فقط — لا يُبنى عليها اختيار؛ كل صف على نافذتي التصميم والتحقق)\n")
     L.append("| mitigation | وقف متحرك ATR | تفعيل R | تصميم: n / صافي R | تحقق: n / صافي R |\n|---|---|---|---|---|")
-    for mit in ("wick", "close"):
+    for mit in mits:
         for ta in (1.5, 2.0, 3.0):
             for ar in (0.5, 1.0, 1.5):
                 tr_ = replay(data, trig[mit], {**base, "trail_atr": ta, "act_r": ar}, cfg)

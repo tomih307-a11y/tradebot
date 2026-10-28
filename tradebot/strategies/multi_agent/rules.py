@@ -10,6 +10,9 @@ cond_pmo15_zero_touch : entry timeframe 15m. PMO first crossed ABOVE its signal 
    wrong side of zero, and the FIRST bar where PMO then touches the zero line (PMO >= 0 for long, <= 0 for short) is the trigger.
    The recommendation fires on that bar (it must be among the last `pmo_touch_window_bars` closed 15m bars: 1 = the latest bar).
    Needs `side` from an earlier condition. The 15m trigger replaces the 1m confirmation of the entry agent (entry_tf_trigger).
+cond_pmo_cross_zero_aligned : (alternative to pmo15_zero_touch) 15m PMO crosses ABOVE its signal line while both are above the zero line
+   (below for short) on the latest closed 15m bar, AND the higher-timeframe PMO (htf = Min60 or Hour4, last closed candle) is above zero
+   (below for short): both timeframes agree on the side of the zero line. Needs `side` from an earlier condition.
 Levels: zone = the OB, stop beyond its far edge by stop_buffer_atr x ATR(4H). open_target = true gives NO fixed targets (the exit
 agent trails the stop); otherwise targets = tp_r multiples of the risk."""
 from __future__ import annotations
@@ -38,6 +41,18 @@ def signal_cross_then_zero_touch(p: np.ndarray, sig: np.ndarray, s: int, cross_m
             if x[c] - y[c] >= 0 > x[c - 1] - y[c - 1]:
                 return c, j
         return None
+    return None
+
+
+def cross_above_zero(p: np.ndarray, sig: np.ndarray, s: int, window: int):
+    """Pure. Index of a PMO/signal crossover in direction s (PMO crosses above signal for s=+1, below for s=-1) that happened with BOTH
+    lines on the s-side of zero, among the last `window` bars (window=1: the latest bar). None if there is none."""
+    n = len(p)
+    for c in range(n - 1, max(n - window - 1, 1), -1):
+        if np.isnan(p[c]) or np.isnan(sig[c]) or np.isnan(p[c - 1]) or np.isnan(sig[c - 1]):
+            continue
+        if s * (p[c] - sig[c]) >= 0 > s * (p[c - 1] - sig[c - 1]) and s * p[c] > 0 and s * sig[c] > 0:
+            return c
     return None
 
 
@@ -95,6 +110,32 @@ class RulesAgent:
         cb, j = hit
         n = len(p)
         return {"note": f"15د: PMO قطع الإشارة {'للأعلى' if s == 1 else 'للأسفل'} (قبل {n - 1 - cb} شمعة) ولمس خط الصفر الآن (قبل {n - 1 - j})",
+                "confirm": not bool(c.entry_tf_trigger)}
+
+    def cond_pmo_cross_zero_aligned(self, ctx: dict):
+        c, ind = self.c, self.ind
+        side, k15 = ctx.get("side"), ctx.get("k15")
+        htf = ctx.get("k1h") if c.htf == "Min60" else ctx.get("k4h")
+        if side is None or htf is None or len(htf["close"]) < int(c.htf_min_bars):
+            return None
+        s = 1 if side == "long" else -1
+        ph, _, _ = pmo(htf["close"], ind.roc_smooth_len, ind.roc_scale, ind.pmo_smooth_len, ind.signal_len)
+        ph = ph.copy()
+        ph[: min(int(ind.warmup_bars), len(ph))] = np.nan
+        if not np.isfinite(ph[-1]) or s * ph[-1] <= 0:                  # cheap test first: the bigger timeframe must agree
+            return None
+        k15 = k15() if callable(k15) else k15
+        if k15 is None or len(k15["close"]) < int(c.min_bars_15m):
+            return None
+        p, sig, _ = pmo(k15["close"], ind.roc_smooth_len, ind.roc_scale, ind.pmo_smooth_len, ind.signal_len)
+        p, sig = p.copy(), sig.copy()
+        p[: min(int(ind.warmup_bars), len(p))] = np.nan
+        sig[: min(int(ind.warmup_bars), len(sig))] = np.nan
+        cb = cross_above_zero(p, sig, s, int(c.pmo_cross_window_bars))
+        if cb is None:
+            return None
+        return {"note": f"15د: PMO قطع الإشارة {'للأعلى' if s == 1 else 'للأسفل'} {'فوق' if s == 1 else 'تحت'} الصفر، وPMO على {'الساعة' if c.htf == 'Min60' else '4س'} "
+                        f"{'فوق' if s == 1 else 'تحت'} الصفر ({ph[-1]:+.2f})",
                 "confirm": not bool(c.entry_tf_trigger)}
 
     def _ob(self, ev, o, h, l, c):
