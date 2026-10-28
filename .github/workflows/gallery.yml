@@ -1,0 +1,42 @@
+name: pmo-gallery
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-gallery.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Restore downloaded candles
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: mexc-candles-gallery-${{ github.run_id }}
+          restore-keys: |
+            mexc-candles-rulesall-
+            mexc-candles-aligned-
+      - name: Tests
+        run: python -m pytest tests/test_gallery.py -q
+      - name: Gallery and event study
+        run: python tools/gallery.py --out reports/gallery --days 150 --top 150 2>&1 | tee reports/gallery.log
+        continue-on-error: true
+      - name: Publish to branch gallery-results
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b gallery-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "gallery results" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin gallery-results
