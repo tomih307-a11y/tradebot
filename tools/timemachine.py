@@ -234,8 +234,13 @@ def single(a, cfg, client):
         # planned trade for Monte Carlo: the latest bar's entry (or the user's plan)
         j_last = len(k15["close"]) - 2
         entry = a.entry if a.entry else float(k15["close"][-1])
-        stop = a.plan_stop if a.plan_stop else swing_stop(s, k15["low"], k15["high"], entry, j_last, float(atr15[j_last]),
-                                                         a.swing_bars, a.stop_buf_atr, a.min_risk_pct)
+        if a.plan_stop:
+            stop, stop_src = a.plan_stop, "من المستخدم"
+        elif seq:                                           # typical stop distance of this rule on this coin, not the (arbitrary) latest bar
+            med = float(np.median([t["risk_pct"] for t in seq]))
+            stop, stop_src = entry * (1 - s * med / 100.0), f"وسيط مسافة وقف القاعدة في تاريخ العملة ({med:.2f}%)"
+        else:
+            stop, stop_src = swing_stop(s, k15["low"], k15["high"], entry, j_last, float(atr15[j_last]), a.swing_bars, a.stop_buf_atr, a.min_risk_pct), "قاع آخر شموع"
         mc = None
         if s * (entry - stop) > 0:
             tm = k15["time"]
@@ -247,7 +252,7 @@ def single(a, cfg, client):
             atr_pct = float(atr15[j_last] / k15["close"][j_last])
             R, G, rsn = mc_paths(s, entry, stop, ratios, cand, slot0, a.replays, a.max_hold_bars + 1, a.trail_atr, a.act_r, atr_pct,
                                  a.loser_bars, a.fee, a.slip, rng)
-            mc = {"entry": entry, "stop": stop, "risk_pct": float(s * (entry - stop) / entry * 100), "replays": a.replays,
+            mc = {"entry": entry, "stop": stop, "stop_source": stop_src, "risk_pct": float(s * (entry - stop) / entry * 100), "replays": a.replays,
                   "mean_R_net": float(R.mean()), "median_R_net": float(np.median(R)), "p_win": float((R > 0).mean()),
                   "p10": float(np.percentile(R, 10)), "p90": float(np.percentile(R, 90)),
                   "reason": {REASONS[k]: float((rsn == k).mean()) for k in REASONS}}
@@ -286,6 +291,7 @@ def single_md(res, a):
         mc = v["monte_carlo"]
         if mc:
             L.append(f"\n### 2) {mc['replays']:,} محاكاة للصفقة المخططة (دخول {mc['entry']:.6g}، وقف {mc['stop']:.6g}، مسافة {mc['risk_pct']:.2f}%)")
+            L.append(f"الوقف المخطط: {mc['stop_source']}. أعطِ `--entry` و`--plan-stop` لتجربة صفقتك أنت.")
             L.append("| صافي R متوسط | وسيط | احتمال الربح | أسوأ 10% | أفضل 10% |\n|---|---|---|---|---|")
             L.append(f"| {mc['mean_R_net']:+.3f} | {mc['median_R_net']:+.3f} | {mc['p_win'] * 100:.0f}% | {mc['p10']:+.2f} | {mc['p90']:+.2f} |")
             L.append("\n| " + " | ".join(mc["reason"].keys()) + " |\n|" + "---|" * len(mc["reason"]) + "\n| " + " | ".join(f"{x * 100:.0f}%" for x in mc["reason"].values()) + " |")

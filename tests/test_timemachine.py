@@ -71,3 +71,10 @@ def test_verdict_thresholds():
     assert "خسرت" in verdict(200, -0.2, -0.35, -0.05, 0.9)
     assert "رمية عملة" in verdict(200, 0.01, -0.1, 0.12, 0.4)
     assert "غير حاسمة" in verdict(200, 0.05, -0.05, 0.15, 0.04)
+
+
+def test_default_plan_stop_comes_from_history_not_the_latest_bar():
+    import inspect
+    import timemachine
+    src = inspect.getsource(timemachine.single)
+    assert "np.median([t[\"risk_pct\"] for t in seq])" in src and "stop_source" in src

@@ -9,38 +9,6 @@ permissions:
   contents: write
 
 jobs:
-  single:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -r requirements.txt
-      - name: Restore candles
-        uses: actions/cache@v4
-        with:
-          path: data/cache
-          key: mexc-candles-tm-single-${{ github.run_id }}
-          restore-keys: mexc-candles-
-      - name: Tests
-        run: python -m pytest tests/test_timemachine.py tests/test_rules_study.py -q
-      - name: Time machine on one coin (both higher timeframes)
-        run: |
-          ARGS="$(head -1 .github/run-timemachine.txt)"
-          for htf in Min60 Hour4; do python tools/timemachine.py $ARGS --htf $htf --out reports/tm 2>&1 | tee -a reports/tm_single.log; done
-        continue-on-error: true
-      - name: Publish
-        if: always()
-        run: |
-          mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
-          cd /tmp/out && git init -q && git checkout -q -b tm-single-results
-          git config user.name "study-bot" && git config user.email "bot@example.com"
-          git add -A && git commit -q -m "time machine (single coin)" || true
-          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-          git push -f origin tm-single-results
-
   universe:
     runs-on: ubuntu-latest
     timeout-minutes: 350

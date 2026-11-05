@@ -1,0 +1,1 @@
+--symbol NIULAI_USDT --roc-len 4 --side long
