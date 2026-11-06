@@ -1,0 +1,44 @@
+name: rr-search
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-rr.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Restore candles
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: mexc-candles-rr-${{ github.run_id }}
+          restore-keys: |
+            mexc-candles-tm-Hour4-
+            mexc-candles-tm-Min60-
+            mexc-candles-aligned-
+            mexc-candles-rulesall-
+      - name: Tests
+        run: python -m pytest tests/test_rr_search.py tests/test_timemachine.py -q
+      - name: Risk/reward x win-rate search (whole market)
+        run: python tools/rr_search.py --universe 5000 --days 150 --out reports/rr 2>&1 | tee reports/rr.log
+        continue-on-error: true
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b rr-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "rr search" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin rr-results
