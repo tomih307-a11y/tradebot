@@ -10,7 +10,7 @@ from rr_search import BARS, bracket, breakout_signals, cooldown, day_boot, rsi_s
 def scalar(s, j, o, h, l, c, atr, k, rr, fee, slip):
     j0 = j + 1
     px = o[j0] * (1 + s * slip / 100)
-    d = k * atr
+    d = max(k * atr, 0.003 * px)
     stop, tgt = px - s * d, px + s * rr * d
     for t in range(BARS):
         i = j0 + t
@@ -85,3 +85,14 @@ def test_required_target_rate_zeroes_the_expectancy():
     exp0 = b["required_target"] * b["r_target"] + (1 - b["required_target"]) * b["r_other"]
     assert abs(exp0) < 1e-9 and 0 < b["required_target"] < 1
     assert abs(b["p_target"] * b["r_target"] + (1 - b["p_target"]) * b["r_other"] - b["exp"]) < 1e-9
+
+
+def test_degenerate_atr_cannot_blow_up_r():
+    rng = np.random.default_rng(4)
+    n = 600
+    c = 100 * np.exp(np.cumsum(rng.normal(0, 0.003, n)))
+    o = np.concatenate([[c[0]], c[:-1]])
+    h, l = np.maximum(o, c) * 1.001, np.minimum(o, c) * 0.999
+    j = np.arange(20, n - BARS - 5, 11)
+    R, out, fees = bracket(1, j, o, h, l, c, np.full(len(j), 1e-12), 1.0, 1.0, 0.04, 0.05)
+    assert np.isfinite(R).all() and np.abs(R).max() < 50          # the floor keeps the stop distance at >= 0.3% of price

@@ -1,1 +1,1 @@
-rr 1
+rr 2 (fixed degenerate-ATR floor; same pre-registered grid)

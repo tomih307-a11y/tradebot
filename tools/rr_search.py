@@ -84,7 +84,7 @@ def rsi_signals(r, s):
 
 
 # ───────────────────────────── vectorised bracket simulation ─────────────────────────────
-def bracket(s, j, o, h, l, c, atr_sig, k, rr, fee_pct, slip_pct):
+def bracket(s, j, o, h, l, c, atr_sig, k, rr, fee_pct, slip_pct, min_stop_pct=0.3):
     """Entries decided at bar j (array), filled at the open of j+1. -> (R_net, outcome) arrays.
     outcome: 0 time exit, 1 stop, 2 target. Entry/exit slippage applied to market-type fills; the target is a limit fill at its price."""
     j0 = j + 1
@@ -94,7 +94,7 @@ def bracket(s, j, o, h, l, c, atr_sig, k, rr, fee_pct, slip_pct):
     L = sliding_window_view(l, W)[j0]
     C = sliding_window_view(c, W)[j0]
     px = O[:, 0] * (1 + s * slip_pct / 100.0)
-    d = k * atr_sig
+    d = np.maximum(k * atr_sig, min_stop_pct / 100.0 * px)        # a stop inside the noise floor makes R meaningless (stale/illiquid contracts)
     stop = px - s * d
     tgt = px + s * rr * d
     adverse = L if s == 1 else H
