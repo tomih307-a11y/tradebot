@@ -40,7 +40,7 @@ def build_matrices(series, t0, t1):
     T, N = len(dates), len(series)
     O, C, A = (np.full((T, N), np.nan) for _ in range(3))
     for i, (sym, k) in enumerate(series.items()):
-        ix = (k["time"] - dates[0]) // DAY
+        ix = ((np.asarray(k["time"], dtype=float) - dates[0]) // DAY).astype(int)       # cached candle times can be floats
         m = (ix >= 0) & (ix < T)
         O[ix[m], i], C[ix[m], i], A[ix[m], i] = k["open"][m], k["close"][m], k["amount"][m]
     return dates, O, C, A

@@ -53,3 +53,11 @@ def test_rev1_is_the_negative_of_the_one_day_return_and_matrices_align():
     assert O.shape == (3, 2) and np.isnan(O[0, 1]) and O[2, 1] == 6.0
     f, _ = features(np.array([[1.0], [1.1], [0.99]]), np.ones((3, 1)))
     assert np.allclose(f["rev1"][1:, 0], [-(0.1), -(0.99 / 1.1 - 1)])
+
+
+def test_float_candle_times_from_the_cache_do_not_break_indexing():
+    t0 = 100 * DAY
+    series = {"A": {"time": np.array([t0, t0 + DAY, t0 + 2 * DAY], dtype=float), "open": np.array([1., 2, 3]), "close": np.array([2., 3, 4]),
+                    "amount": np.ones(3)}}
+    dates, O, C, A = build_matrices(series, t0, t0 + 2 * DAY)
+    assert O.shape == (3, 1) and list(O[:, 0]) == [1.0, 2.0, 3.0]
