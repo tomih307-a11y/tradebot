@@ -1,0 +1,52 @@
+name: forward-xsec
+on:
+  schedule:
+    - cron: "20 0 * * *"
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-forward.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: forward-xsec
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Tests
+        run: python -m pytest tests/test_forward_xsec.py tests/test_xsec.py -q
+      - name: Restore state from the results branch
+        run: |
+          mkdir -p reports/forward
+          if git ls-remote --exit-code --heads origin forward-results >/dev/null 2>&1; then
+            git fetch --depth=1 origin forward-results
+            git show FETCH_HEAD:forward/state.json > reports/forward/state.json 2>/dev/null || rm -f reports/forward/state.json
+          fi
+      - name: Daily paper bookkeeping (no orders are ever sent)
+        run: python tools/forward_xsec.py --dir reports/forward 2>&1 | tee reports/forward.log
+      - name: Publish (appends a commit; history is kept)
+        if: always()
+        run: |
+          rm -rf /tmp/fw && mkdir /tmp/fw && cd /tmp/fw && git init -q
+          git config user.name "forward-bot" && git config user.email "bot@example.com"
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          if git ls-remote --exit-code --heads origin forward-results >/dev/null 2>&1; then
+            git fetch --depth=1 origin forward-results && git checkout -q -b forward-results FETCH_HEAD
+          else
+            git checkout -q -b forward-results
+          fi
+          mkdir -p forward && cp "$GITHUB_WORKSPACE"/reports/forward/* forward/ 2>/dev/null || true
+          cp "$GITHUB_WORKSPACE"/reports/forward.log . 2>/dev/null || true
+          git add -A && git commit -q -m "forward $(date -u +%F)" || true
+          git push origin forward-results || (git pull --rebase origin forward-results && git push origin forward-results)
