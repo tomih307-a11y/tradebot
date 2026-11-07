@@ -77,13 +77,13 @@ def htf_state(h: np.ndarray, l: np.ndarray, c: np.ndarray, n: int = N_SW):
             "sh_conf": sh_conf, "sh_price": sh_price}
 
 
-def ltf_setups(o, h, l, c, atr, close4_t, t15, st, n: int = N_SW):
+def ltf_setups(o, h, l, c, atr, close4_t, t15, st, n: int = N_SW, ltf_sec: int = 900):
     """Long setups on the 15m chart. -> list of dict(entry_i, stop, target, sweep_i, choch_i, rr, zlo, zhi).
     close4_t: close time of each 4H bar; t15: OPEN time of each 15m bar; st: htf_state output (same price space)."""
     N = len(c)
     hs15, ls15 = pivots(h, l, n)
     last_sl, last_sh = _last_confirmed(ls15, n, N), _last_confirmed(hs15, n, N)
-    i4 = np.searchsorted(close4_t, np.asarray(t15) + 900, side="right") - 1          # last 4H candle already closed at each 15m close
+    i4 = np.searchsorted(close4_t, np.asarray(t15) + ltf_sec, side="right") - 1          # last 4H candle already closed at each 15m close
     ok4 = i4 >= 0
     j4 = np.clip(i4, 0, None)
     zlo, zhi, bias = st["zlo"][j4], st["zhi"][j4], st["bias"][j4]
@@ -155,7 +155,7 @@ def sim_fixed(s, i0, stop, tgt, o, h, l, c, fee_pct, slip_pct, max_bars=MAX_BARS
     return {"R_gross": gross, "R_net": gross - fee_pct / 100.0 * (px + ex) / risk, "outcome": outcome, "exit_i": k_exit, "risk_pct": risk / px * 100.0}
 
 
-def find_trades(o, h, l, c, atr, t15, k4, side, fee_pct, slip_pct, start_ts=0):
+def find_trades(o, h, l, c, atr, t15, k4, side, fee_pct, slip_pct, start_ts=0, ltf_sec=900, htf_sec=14400):
     """All sequential (non-overlapping) trades of one side. k4: dict of 4H arrays (time, open, high, low, close). -> list of trade dicts."""
     s = 1 if side == "long" else -1
     if s == 1:
@@ -165,7 +165,7 @@ def find_trades(o, h, l, c, atr, t15, k4, side, fee_pct, slip_pct, start_ts=0):
         o_, h_, l_, c_ = mirror(o, h, l, c)
         o4, h4, l4, c4 = mirror(k4["open"], k4["high"], k4["low"], k4["close"])
     st = htf_state(h4, l4, c4)
-    setups = ltf_setups(o_, h_, l_, c_, atr, k4["time"] + 4 * 3600, t15, st)
+    setups = ltf_setups(o_, h_, l_, c_, atr, k4["time"] + htf_sec, t15, st, ltf_sec=ltf_sec)
     trades, busy = [], -1
     for su in sorted(setups, key=lambda x: x["entry_i"]):
         if su["entry_i"] <= busy or t15[su["entry_i"]] < start_ts:

@@ -62,7 +62,14 @@ def random_baseline(trades, o, h, l, c, side, fee, slip, rng, lo_i, per_trade=5)
     return out
 
 
-def run_universe(cfg, client, days=150, universe=5000, out_dir="reports/smc_model", fee=None, slip=0.05, seed=19, log=print):
+VARIANTS = {   # registered in docs/SMC_STRATEGY.md
+    "15m/4H": dict(ltf="Min15", htf="Hour4", ltf_sec=900, htf_sec=14400, pre_ltf_days=10, pre_htf_days=60, min_ltf=1500, min_htf=120),
+    "1H/D1": dict(ltf="Min60", htf="Day1", ltf_sec=3600, htf_sec=86400, pre_ltf_days=20, pre_htf_days=300, min_ltf=3000, min_htf=150),
+}
+
+
+def run_universe(cfg, client, days=150, universe=5000, out_dir="reports/smc_model", fee=None, slip=0.05, seed=19, log=print, variant="15m/4H"):
+    v = VARIANTS[variant]
     fee = cfg.trading.taker_fee_pct if fee is None else fee
     now = int(time.time())
     start = now - days * 86400
@@ -76,19 +83,19 @@ def run_universe(cfg, client, days=150, universe=5000, out_dir="reports/smc_mode
     real, base, used = {"long": [], "short": []}, {"long": [], "short": []}, 0
     for n_, sym in enumerate(symbols, 1):
         try:
-            k15 = get_klines(client, dd, sym, "Min15", start - 10 * 86400, now)
-            k4 = get_klines(client, dd, sym, "Hour4", start - 60 * 86400, now)
+            k15 = get_klines(client, dd, sym, v["ltf"], start - v["pre_ltf_days"] * 86400, now)
+            k4 = get_klines(client, dd, sym, v["htf"], start - v["pre_htf_days"] * 86400, now)
         except Exception as e:
             log(f"  {sym}: {e}")
             continue
-        if len(k15["close"]) < 1500 or len(k4["close"]) < 120:
+        if len(k15["close"]) < v["min_ltf"] or len(k4["close"]) < v["min_htf"]:
             continue
         used += 1
         o, h, l, c, t15 = (np.asarray(k15[f], float) for f in ("open", "high", "low", "close", "time"))
         atr = atr_rma(h, l, c, 14)
         lo_i = int(np.searchsorted(t15, start))
         for side in ("long", "short"):
-            tr = M.find_trades(o, h, l, c, atr, t15.astype(int), k4, side, fee, slip, start_ts=start)
+            tr = M.find_trades(o, h, l, c, atr, t15.astype(int), k4, side, fee, slip, start_ts=start, ltf_sec=v["ltf_sec"], htf_sec=v["htf_sec"])
             for t in tr:
                 t.update(symbol=sym, rank=rank[sym])
             real[side] += tr
@@ -97,7 +104,7 @@ def run_universe(cfg, client, days=150, universe=5000, out_dir="reports/smc_mode
                 base[side].append(b)
         if n_ % 50 == 0:
             log(f"  [{n_}/{len(symbols)}] {sym} trades long={len(real['long'])} short={len(real['short'])}")
-    res = {"meta": {"symbols": used, "days": days, "fee": fee, "slip": slip, "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}, "sides": {}}
+    res = {"meta": {"variant": variant, "symbols": used, "days": days, "fee": fee, "slip": slip, "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}, "sides": {}}
     for side in ("long", "short"):
         win = {"design": lambda t: t["T"] < t1, "selection": lambda t: t1 <= t["T"] < t2, "holdout": lambda t: t["T"] >= t2}
         d = {w: block([t for t in real[side] if f(t)]) for w, f in win.items()}
@@ -130,7 +137,7 @@ def fmt(b):
 
 def report(res):
     m = res["meta"]
-    L = ["# استراتيجية SMC: اختبار على كل عقود MEXC", "",
+    L = [f"# استراتيجية SMC ({m.get('variant', '15m/4H')}): اختبار على كل عقود MEXC", "",
          f"- {m['symbols']} عقداً · {m['days']} يوماً · {m['generated']} · رسوم Taker {m['fee']}% + انزلاق {m['slip']}% · القواعد: `docs/SMC_STRATEGY.md` (مثبّتة قبل الاختبار).",
          "- لكل نافذة: عدد الصفقات / نسبة إصابة الهدف (اللازمة للتعادل من نفس الصفقات) / متوسط صافي R [حد ثقة 95% بإعادة عيّنة بالأيام].", ""]
     for side, name in (("long", "شراء"), ("short", "بيع")):

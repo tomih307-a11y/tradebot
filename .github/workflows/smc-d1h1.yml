@@ -1,0 +1,42 @@
+name: smc-d1h1
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-smc-d1h1.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Restore candles
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: mexc-candles-d1h1-${{ github.run_id }}
+          restore-keys: |
+            mexc-candles-d1h1-
+            mexc-candles-smcmodel-
+      - name: Tests
+        run: python -m pytest tests/test_smc_strategy.py -q
+      - name: SMC D1/H1 validation (registered in docs/SMC_STRATEGY.md addendum A)
+        run: python tools/smc_model_study.py --variant 1H/D1 --days 1000 --out reports/smc_d1h1 2>&1 | tee reports/smc_d1h1.log
+        continue-on-error: true
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b smc-d1h1-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "smc d1h1" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin smc-d1h1-results

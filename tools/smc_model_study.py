@@ -17,10 +17,11 @@ def main():
     ap.add_argument("--out", default="reports/smc_model")
     ap.add_argument("--days", type=int, default=150)
     ap.add_argument("--universe", type=int, default=5000)
+    ap.add_argument("--variant", default="15m/4H", choices=["15m/4H", "1H/D1"])
     ap.add_argument("--config", default="config.toml")
     a = ap.parse_args()
     cfg = load_config(a.config)
-    run_universe(cfg, MexcClient(cfg.mexc), days=a.days, universe=a.universe, out_dir=a.out, log=lambda m: print(m, flush=True))
+    run_universe(cfg, MexcClient(cfg.mexc), days=a.days, universe=a.universe, out_dir=a.out, variant=a.variant, log=lambda m: print(m, flush=True))
     print(open(Path(a.out) / "smc_model.md", encoding="utf-8").read())
 
 

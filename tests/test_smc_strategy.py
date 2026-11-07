@@ -115,3 +115,17 @@ def test_live_setup_appears_while_the_choch_is_fresh_and_in_real_prices():
         mm.htf_state, mm.ltf_setups = orig, orig_l
     assert len(out) == 1 and out[0]["age"] == 0 and out[0]["choch_i"] == 14
     assert abs(out[0]["entry"] - 100.7) < 1e-9 and out[0]["stop"] < out[0]["entry"] < out[0]["target"]
+
+
+def test_timeframe_scaling_changes_only_the_clock_not_the_logic():
+    st, _ = state()
+    o, h, l, c = arrays()
+    ltf, htf = 3600, 86400                                                        # 1H bars on a daily 4H-equivalent state
+    close_htf = np.arange(24) * htf + htf
+    t_ltf = 24 * htf + np.arange(len(c)) * ltf
+    out = M.ltf_setups(o, h, l, c, np.full(len(c), 2.0), close_htf, t_ltf, st, n=2, ltf_sec=ltf)
+    assert len(out) == 1 and out[0]["choch_i"] == 14 and out[0]["entry_i"] == 15
+    # an LTF bar that opens BEFORE the daily candle has closed must not see that daily state (no look-ahead)
+    t_early = 24 * htf - 5 * ltf + np.arange(len(c)) * ltf
+    early = M.ltf_setups(o, h, l, c, np.full(len(c), 2.0), close_htf, t_early, st, n=2, ltf_sec=ltf)
+    assert all(s_["sweep_i"] >= 5 for s_ in early)                                # bars 0..4 close before the last daily close: they used the previous daily state
