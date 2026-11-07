@@ -73,7 +73,7 @@ def features(C, A):
 
 
 # ───────────────────────────── portfolio ─────────────────────────────
-def period_returns(score, turn30, O, dates, H, top_m, cost_leg, start_i, end_i, min_names=25, q=0.2, step=None):
+def period_returns(score, turn30, O, dates, H, top_m, cost_leg, start_i, end_i, min_names=25, q=0.2, step=None, skip_m=0):
     """Rebalances at rows start_i, start_i+step, ... < end_i (step defaults to H = non-overlapping; step=1 = every start day, overlapping).
     -> (dates, net return per unit of gross exposure)."""
     out_d, out_r = [], []
@@ -82,7 +82,7 @@ def period_returns(score, turn30, O, dates, H, top_m, cost_leg, start_i, end_i, 
         sc, tv = score[t], turn30[t]
         elig = np.where(np.isfinite(sc) & np.isfinite(tv))[0]
         if len(elig) >= min_names:
-            elig = elig[np.argsort(-tv[elig])][:top_m]
+            elig = elig[np.argsort(-tv[elig])][skip_m: skip_m + top_m]          # skip_m > 0: liquidity ranks skip_m+1 .. skip_m+top_m (disjoint assets)
             r = O[t + 1 + H, elig] / O[t + 1, elig] - 1
             ok = np.isfinite(r)
             elig, r, s_ = elig[ok], r[ok], sc[elig][ok]
@@ -164,7 +164,7 @@ def load_series(a, cfg, client, now):
     return series
 
 
-def replicate_from_matrices(dates, O, C, A, cutoff_ts, cost_leg, top_m, seed=19, control_seeds=30, H=7):
+def replicate_from_matrices(dates, O, C, A, cutoff_ts, cost_leg, top_m, seed=19, control_seeds=30, H=7, skip_m=0):
     """Pre-registered replication (addendum A of docs/PREREG_FORWARD.md): H1 = mom30, H2 = mom7 at H=7, rows strictly before cutoff_ts."""
     f, turn30 = features(C, A)
     first = 40
@@ -175,13 +175,13 @@ def replicate_from_matrices(dates, O, C, A, cutoff_ts, cost_leg, top_m, seed=19,
     if cut_i - first < 60:
         out["note"] = "تاريخ غير كافٍ قبل التاريخ المحدد"
         return out
-    elig = [int((np.isfinite(f["mom30"][t]) & np.isfinite(turn30[t])).sum()) for t in range(first, cut_i)]
+    elig = [max(int((np.isfinite(f["mom30"][t]) & np.isfinite(turn30[t])).sum()) - skip_m, 0) for t in range(first, cut_i)]      # names available in the requested rank band
     out["eligible"] = {"min": int(min(elig)), "median": int(np.median(elig)), "max": int(max(elig)), "rows_with_25plus": int(sum(e >= 25 for e in elig))}
     rng = np.random.default_rng(seed)
     ctrl_means, ctrl_t = [], []
     for sd in range(control_seeds):
         sc = rng.random(C.shape)
-        _, r = period_returns(sc, turn30, O, dates, H, top_m, cost_leg, first, cut_i, step=1)
+        _, r = period_returns(sc, turn30, O, dates, H, top_m, cost_leg, first, cut_i, step=1, skip_m=skip_m)
         b = block_ov(r, H)
         if b:
             ctrl_means.append(b["exp_pct"])
@@ -189,8 +189,8 @@ def replicate_from_matrices(dates, O, C, A, cutoff_ts, cost_leg, top_m, seed=19,
     out["control"] = {"mean_pct": float(np.mean(ctrl_means)) if ctrl_means else None, "t_mean": float(np.mean(ctrl_t)) if ctrl_t else None,
                       "t_max": float(np.max(ctrl_t)) if ctrl_t else None}
     for name, thr in (("mom30", 1.96), ("mom7", 2.24)):
-        _, r_ov = period_returns(f[name], turn30, O, dates, H, top_m, cost_leg, first, cut_i, step=1)
-        _, r_no = period_returns(f[name], turn30, O, dates, H, top_m, cost_leg, first, cut_i)
+        _, r_ov = period_returns(f[name], turn30, O, dates, H, top_m, cost_leg, first, cut_i, step=1, skip_m=skip_m)
+        _, r_no = period_returns(f[name], turn30, O, dates, H, top_m, cost_leg, first, cut_i, skip_m=skip_m)
         b_ov, b_no = block_ov(r_ov, H), block(r_no)
         verdict_ = "غير حاسمة: أقل من 90 فترة غير متداخلة" if (not b_no or b_no["n"] < 90) else "لم تنجح"
         if b_ov and b_no and b_no["n"] >= 90 and b_ov["exp_pct"] > 0 and b_ov["t_hac"] >= thr and b_ov["ci_lo"] > 0 \
@@ -206,15 +206,16 @@ def replicate(a, cfg, client):
     dates, O, C, A = build_matrices(series, now - a.days * DAY, now - DAY)
     cutoff = int(datetime.strptime(a.replication_before, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
     cost_leg = 2 * (a.fee + a.slip) / 100.0
-    res = replicate_from_matrices(dates, O, C, A, cutoff, cost_leg, a.top_m, a.seed, a.control_seeds)
-    res["meta"] = {"symbols": len(series), "history_from": datetime.fromtimestamp(int(dates[0]), timezone.utc).strftime("%Y-%m-%d"),
+    res = replicate_from_matrices(dates, O, C, A, cutoff, cost_leg, a.top_m, a.seed, a.control_seeds, skip_m=a.skip_m)
+    res["meta"] = {"skip_m": a.skip_m, "top_m": a.top_m, "slip": a.slip, "symbols": len(series), "history_from": datetime.fromtimestamp(int(dates[0]), timezone.utc).strftime("%Y-%m-%d"),
                    "cutoff": a.replication_before, "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
     return res
 
 
 def replication_md(res):
     m = res["meta"]
-    L = [f"# تكرار تاريخي للزخم المقطعي قبل {m['cutoff']} ({m['generated']})", "",
+    band = f"ترتيب السيولة {m['skip_m'] + 1}–{m['skip_m'] + m['top_m']}" if m.get("skip_m") else f"أعلى {m.get('top_m', 150)}"
+    L = [f"# تكرار للزخم المقطعي ({band}) حتى {m['cutoff']} ({m['generated']})", "",
          f"- {m['symbols']} عقداً محمّلاً · أقدم يوم متاح: {m['history_from']} · نافذة التقييم: {res['window']['from']} → {res['window']['to']} ({res['window']['rows']} يوماً).",
          "- التسجيل المسبق: الإضافة أ في `docs/PREREG_FORWARD.md` (مثبّتة قبل تحميل هذه البيانات). H1 = mom30، H2 = mom7، فترة الاحتفاظ 7 أيام فقط."]
     if res.get("note"):
@@ -335,6 +336,7 @@ def main():
     ap.add_argument("--seed", type=int, default=19)
     ap.add_argument("--config", default="config.toml")
     ap.add_argument("--out", default="reports/xsec")
+    ap.add_argument("--skip-m", type=int, default=0, help="liquidity ranks skip_m+1 .. skip_m+top_m instead of 1 .. top_m")
     ap.add_argument("--replication-before", default=None, help="YYYY-MM-DD: run ONLY the pre-registered replication on rows before this date")
     a = ap.parse_args()
     cfg = load_config(a.config)

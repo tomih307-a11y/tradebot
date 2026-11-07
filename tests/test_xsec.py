@@ -101,3 +101,26 @@ def test_replication_detects_planted_momentum_rejects_noise_and_flags_short_hist
     short = replicate_from_matrices(dates, O, C, A, dates[60], 0.0018, 80, control_seeds=3)
     assert "غير كافٍ" in short.get("note", "")
     assert replicate_from_matrices(dates, O, C, A, dates[200], 0.0018, 80, control_seeds=3)["configs"]["mom7"]["verdict"].startswith("غير حاسمة")
+
+
+def test_rank_band_selects_disjoint_assets_and_is_used_by_the_replication():
+    n_days, n = 400, 120
+    rng = np.random.default_rng(7)
+    ret = rng.normal(0, 0.03, (n_days, n))
+    C = 100 * np.exp(np.cumsum(ret, axis=0))
+    O = np.vstack([C[:1], C[:-1]])
+    A = np.tile(np.linspace(2e7, 1e6, n), (n_days, 1))              # asset 0 is the most liquid, asset n-1 the least
+    dates = np.arange(n_days) * DAY
+    f, t30 = features(C, A)
+    seen = {}
+
+    for skip in (0, 60):
+        # monkeypatch-free check: with the planted scores the long leg must come from the requested band
+        sc = np.tile(np.arange(n, dtype=float), (n_days, 1))        # score = column index
+        d, r = period_returns(sc, t30, O, dates, 3, 50, 0.0, 60, 300, skip_m=skip, step=3)
+        assert len(r) > 10
+        seen[skip] = r
+    assert not np.allclose(seen[0][:10], seen[60][:10])               # different assets -> different returns
+    from xsec import replicate_from_matrices
+    res = replicate_from_matrices(dates, O, C, A, dates[-1] + DAY, 0.0, 50, control_seeds=3, skip_m=60)
+    assert res["eligible"]["median"] <= n - 60                        # eligible count reports names inside the rank band only
