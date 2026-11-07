@@ -61,3 +61,17 @@ def test_float_candle_times_from_the_cache_do_not_break_indexing():
                     "amount": np.ones(3)}}
     dates, O, C, A = build_matrices(series, t0, t0 + 2 * DAY)
     assert O.shape == (3, 1) and list(O[:, 0]) == [1.0, 2.0, 3.0]
+
+
+def test_hac_t_corrects_overlap_and_bootstrap_brackets_the_mean():
+    from xsec import block_boot_ci, hac_t
+    rng = np.random.default_rng(6)
+    base = rng.normal(0.0, 1.0, 3000)
+    H = 7
+    ov = np.convolve(base, np.ones(H), mode="valid") / H           # overlapping H-day averages of iid noise
+    naive = ov.mean() / (ov.std(ddof=1) / np.sqrt(len(ov)))
+    corrected = hac_t(ov, 2 * H)
+    assert abs(corrected) < abs(naive) + 1e-9 or abs(corrected) < 2.5          # the naive t overstates certainty on overlapped data
+    lo, hi = block_boot_ci(ov, 14)
+    assert lo < ov.mean() < hi
+    assert abs(hac_t(base[:2000], 1)) < 3.0

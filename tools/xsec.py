@@ -73,8 +73,9 @@ def features(C, A):
 
 
 # ───────────────────────────── portfolio ─────────────────────────────
-def period_returns(score, turn30, O, dates, H, top_m, cost_leg, start_i, end_i, min_names=25, q=0.2):
-    """Non-overlapping rebalances at rows start_i, start_i+H, ... < end_i. -> (dates, net return per unit of gross exposure)."""
+def period_returns(score, turn30, O, dates, H, top_m, cost_leg, start_i, end_i, min_names=25, q=0.2, step=None):
+    """Rebalances at rows start_i, start_i+step, ... < end_i (step defaults to H = non-overlapping; step=1 = every start day, overlapping).
+    -> (dates, net return per unit of gross exposure)."""
     out_d, out_r = [], []
     t = start_i
     while t + 1 + H < min(end_i, len(dates)):
@@ -91,7 +92,7 @@ def period_returns(score, turn30, O, dates, H, top_m, cost_leg, start_i, end_i, 
                 short, long_ = r[order[:kq]].mean(), r[order[-kq:]].mean()
                 out_d.append(dates[t])
                 out_r.append((long_ - short) / 2.0 - cost_leg)
-        t += H
+        t += (step or H)
     return np.array(out_d), np.array(out_r)
 
 
@@ -107,6 +108,41 @@ def block(r):
     return {"n": int(n), "win": float(win.mean()), "payoff": float(payoff), "required_win": float(1 / (1 + payoff)) if payoff == payoff else float("nan"),
             "exp_pct": float(r.mean() * 100), "t": float(r.mean() / (sd / np.sqrt(n))) if sd > 0 else 0.0,
             "sharpe": float(r.mean() / sd * np.sqrt(365.0 / 1)) if sd > 0 else 0.0}
+
+
+def hac_t(r, L):
+    """Newey-West t-statistic of the mean (Bartlett kernel, lag L): overlapping H-day holdings make neighbouring returns correlated."""
+    n = len(r)
+    if n < 30:
+        return 0.0
+    u = r - r.mean()
+    s_ = (u * u).sum() / n
+    for l in range(1, min(L, n - 1) + 1):
+        s_ += 2 * (1 - l / (L + 1)) * (u[l:] * u[:-l]).sum() / n
+    se = np.sqrt(max(s_, 1e-18) / n)
+    return float(r.mean() / se)
+
+
+def block_boot_ci(r, blk, n_boot=1000, seed=0):
+    n = len(r)
+    if n < 30:
+        return (float("nan"), float("nan"))
+    rng = np.random.default_rng(seed)
+    nb = int(np.ceil(n / blk))
+    starts = rng.integers(0, n - blk + 1, size=(n_boot, nb))
+    idx = (starts[:, :, None] + np.arange(blk)[None, None, :]).reshape(n_boot, -1)[:, :n]
+    m = r[idx].mean(1)
+    return float(np.percentile(m, 2.5)), float(np.percentile(m, 97.5))
+
+
+def block_ov(r, H):
+    b = block(r)
+    if not b:
+        return None
+    L = max(H, 1)
+    b["t_hac"] = hac_t(r, 2 * L)
+    b["ci_lo"], b["ci_hi"] = (v * 100 for v in block_boot_ci(r, max(2 * L, 5)))
+    return b
 
 
 def evaluate(a, cfg, client):
@@ -142,6 +178,9 @@ def evaluate(a, cfg, client):
             _, r = period_returns(f[name], turn30, O, dates, H, a.top_m, cost_leg, s_, e_)
             row[w] = block(r)
             row[w + "_gross"] = float((r.mean() + cost_leg) * 100) if len(r) else None
+        for w, (s_, e_) in windows.items():
+            _, r = period_returns(f[name], turn30, O, dates, H, a.top_m, cost_leg, s_, e_, step=1)
+            row["ov_" + w] = block_ov(r, H)
         res["configs"].append(row)
     rng = np.random.default_rng(a.seed)
     for seed in range(a.control_seeds):
@@ -151,6 +190,8 @@ def evaluate(a, cfg, client):
             for w, (s_, e_) in windows.items():
                 _, r = period_returns(score, turn30, O, dates, H, a.top_m, cost_leg, s_, e_)
                 row[w] = block(r)
+                _, r1 = period_returns(score, turn30, O, dates, H, a.top_m, cost_leg, s_, e_, step=1)
+                row["ov_" + w] = block_ov(r1, H)
             res["control"].append(row)
     return res
 
@@ -180,15 +221,31 @@ def report(res, a):
     for r in res["configs"]:
         if r["selection"]:
             L.append(f"| {r['signal']} | {r['H']} | {r['selection_gross']:+.3f} | {r['selection']['exp_pct']:+.3f} |")
+    # same 15 configs, same thresholds, more efficient estimator: every start day (overlapping holdings), Newey-West t
+    ov_ctrl = [c["ov_selection"]["t_hac"] for c in res["control"] if c.get("ov_selection")]
+    L.append("\n## نفس التراكيب بمحافظ متداخلة (كل يوم بدء) وخطأ معياري Newey-West")
+    if ov_ctrl:
+        L.append(f"- الشاهد العشوائي بنفس الطريقة (نافذة الاختيار): متوسط t {np.mean(ov_ctrl):+.2f}، أعلى {max(ov_ctrl):+.2f}، نسبة ما تجاوز 2.9: {np.mean([t >= 2.9 for t in ov_ctrl]) * 100:.1f}%.")
+
+    def fo(b):
+        return "–" if not b else f"{b['n']} / فوز {b['win'] * 100:.0f}% (لازم {b['required_win'] * 100:.0f}%) / {b['exp_pct']:+.3f}% [{b['ci_lo']:+.2f},{b['ci_hi']:+.2f}] / t {b['t_hac']:+.1f}"
+    L.append("\n| الإشارة | H | تصميم: n / فوز (لازم) / توقع [فترة 95%] / t | اختيار | تحقق نهائي |\n|---|---|---|---|---|")
+    for r in res["configs"]:
+        L.append(f"| {r['signal']} | {r['H']} | {fo(r.get('ov_design'))} | {fo(r.get('ov_selection'))} | {fo(r.get('ov_holdout'))} |")
+    ov_cand = [r for r in res["configs"] if r.get("ov_design") and r.get("ov_selection") and r["ov_design"]["exp_pct"] > 0 and r["ov_selection"]["exp_pct"] > 0 and r["ov_selection"]["t_hac"] >= 2.9]
+    ov_found = [r for r in ov_cand if r["ov_holdout"] and r["ov_holdout"]["exp_pct"] > 0 and r["ov_holdout"]["t_hac"] >= 1.96 and r["ov_holdout"]["ci_lo"] > 0]
     L.append("\n## الحكم الآلي\n")
-    L.append(f"- مرشّحون (موجب في التصميم والاختيار، وt ≥ 2.9 في الاختيار): {len(cands)}")
+    L.append(f"- (محافظ متداخلة) مرشّحون: {len(ov_cand)} · وُجد (موجب على التحقق النهائي بـ t ≥ 1.96 وحد ثقة أدنى موجب): {len(ov_found)}")
+    for r in ov_found:
+        L.append(f"  - **{r['signal']} / H={r['H']}**: {fo(r['ov_holdout'])}")
+    L.append(f"- (محافظ غير متداخلة) مرشّحون (موجب في التصميم والاختيار، وt ≥ 2.9 في الاختيار): {len(cands)}")
     if found:
         L.append(f"**وُجد {len(found)} تركيب يبقى موجباً على التحقق النهائي (t ≥ 1.96):**")
         for r in found:
             L.append(f"- {r['signal']} / H={r['H']}: {fmt(r['holdout'])}")
     else:
         L.append("**لم يوجد أي تركيب يحقق الشروط كلها.**")
-    return "\n".join(L), cands, found
+    return "\n".join(L), cands, ov_found
 
 
 def main():

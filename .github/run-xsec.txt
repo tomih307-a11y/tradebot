@@ -1,1 +1,1 @@
-xsec 2 (fix float candle times)
+xsec 3 (overlapping portfolios + Newey-West on the same 15 pre-registered configs)
