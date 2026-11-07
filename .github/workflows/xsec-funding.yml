@@ -1,0 +1,34 @@
+name: xsec-funding
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-xsec-funding.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Tests
+        run: python -m pytest tests/test_xsec_funding.py tests/test_xsec.py -q
+      - name: Funding drag on the momentum edge (descriptive)
+        run: python tools/xsec_funding.py --top 300 --days 3000 --out reports/xsec_funding 2>&1 | tee reports/xsec_funding.log
+        continue-on-error: true
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b xsec-funding-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "xsec funding" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin xsec-funding-results
