@@ -5,6 +5,7 @@ REGISTRY = {
     "pmo_zero_cross": "tradebot.strategies.pmo_zero_cross",
     "telegram_signals": "tradebot.strategies.telegram_signals",
     "multi_agent": "tradebot.strategies.multi_agent",
+    "smc_strategy": "tradebot.strategies.smc_strategy",
 }
 
 
