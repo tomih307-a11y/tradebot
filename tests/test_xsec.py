@@ -75,3 +75,29 @@ def test_hac_t_corrects_overlap_and_bootstrap_brackets_the_mean():
     lo, hi = block_boot_ci(ov, 14)
     assert lo < ov.mean() < hi
     assert abs(hac_t(base[:2000], 1)) < 3.0
+
+
+def _early_panel(mu, n_days=1500, n=80, vol=0.04, seed=0):
+    rng = np.random.default_rng(seed)
+    ret = mu[None, :] + rng.normal(0, vol, (n_days, n))
+    C = 100 * np.exp(np.cumsum(ret, axis=0))
+    O = np.vstack([C[:1], C[:-1]])
+    A = np.full_like(C, 1e7)
+    return np.arange(n_days) * DAY + 1_500_000_000 // DAY * DAY, O, C, A
+
+
+def test_replication_detects_planted_momentum_rejects_noise_and_flags_short_history():
+    from xsec import replicate_from_matrices
+    n = 80
+    cut_idx = 1100
+    rng = np.random.default_rng(4)
+    mu = rng.normal(0, 0.004, n)
+    dates, O, C, A = _early_panel(mu)
+    good = replicate_from_matrices(dates, O, C, A, dates[cut_idx], 0.0018, 80, control_seeds=8)
+    assert good["configs"]["mom30"]["verdict"].startswith("نجحت") and good["window"]["rows"] == cut_idx - 40
+    dates, O, C, A = _early_panel(np.zeros(n), seed=2)
+    null = replicate_from_matrices(dates, O, C, A, dates[cut_idx], 0.0018, 80, control_seeds=8)
+    assert all(not r["verdict"].startswith("نجحت") for r in null["configs"].values())
+    short = replicate_from_matrices(dates, O, C, A, dates[60], 0.0018, 80, control_seeds=3)
+    assert "غير كافٍ" in short.get("note", "")
+    assert replicate_from_matrices(dates, O, C, A, dates[200], 0.0018, 80, control_seeds=3)["configs"]["mom7"]["verdict"].startswith("غير حاسمة")

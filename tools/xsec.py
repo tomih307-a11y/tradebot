@@ -145,8 +145,7 @@ def block_ov(r, H):
     return b
 
 
-def evaluate(a, cfg, client):
-    now = int(time.time())
+def load_series(a, cfg, client, now):
     tick = [t for t in client.tickers() if str(t.get("symbol", "")).endswith("_USDT")]
     tick.sort(key=lambda t: -float(t.get("amount24") or 0))
     symbols = [t["symbol"] for t in tick[: a.top]]
@@ -162,6 +161,83 @@ def evaluate(a, cfg, client):
             series[sym] = k
         if n_ % 50 == 0:
             print(f"  [{n_}/{len(symbols)}] loaded={len(series)}", flush=True)
+    return series
+
+
+def replicate_from_matrices(dates, O, C, A, cutoff_ts, cost_leg, top_m, seed=19, control_seeds=30, H=7):
+    """Pre-registered replication (addendum A of docs/PREREG_FORWARD.md): H1 = mom30, H2 = mom7 at H=7, rows strictly before cutoff_ts."""
+    f, turn30 = features(C, A)
+    first = 40
+    cut_i = int(np.searchsorted(dates, cutoff_ts))
+    out = {"window": {"from": datetime.fromtimestamp(int(dates[first]), timezone.utc).strftime("%Y-%m-%d") if cut_i > first else None,
+                      "to": datetime.fromtimestamp(int(dates[max(cut_i - 1, 0)]), timezone.utc).strftime("%Y-%m-%d"), "rows": max(cut_i - first, 0)},
+           "configs": {}, "control": []}
+    if cut_i - first < 60:
+        out["note"] = "تاريخ غير كافٍ قبل التاريخ المحدد"
+        return out
+    elig = [int((np.isfinite(f["mom30"][t]) & np.isfinite(turn30[t])).sum()) for t in range(first, cut_i)]
+    out["eligible"] = {"min": int(min(elig)), "median": int(np.median(elig)), "max": int(max(elig)), "rows_with_25plus": int(sum(e >= 25 for e in elig))}
+    rng = np.random.default_rng(seed)
+    ctrl_means, ctrl_t = [], []
+    for sd in range(control_seeds):
+        sc = rng.random(C.shape)
+        _, r = period_returns(sc, turn30, O, dates, H, top_m, cost_leg, first, cut_i, step=1)
+        b = block_ov(r, H)
+        if b:
+            ctrl_means.append(b["exp_pct"])
+            ctrl_t.append(b["t_hac"])
+    out["control"] = {"mean_pct": float(np.mean(ctrl_means)) if ctrl_means else None, "t_mean": float(np.mean(ctrl_t)) if ctrl_t else None,
+                      "t_max": float(np.max(ctrl_t)) if ctrl_t else None}
+    for name, thr in (("mom30", 1.96), ("mom7", 2.24)):
+        _, r_ov = period_returns(f[name], turn30, O, dates, H, top_m, cost_leg, first, cut_i, step=1)
+        _, r_no = period_returns(f[name], turn30, O, dates, H, top_m, cost_leg, first, cut_i)
+        b_ov, b_no = block_ov(r_ov, H), block(r_no)
+        verdict_ = "غير حاسمة: أقل من 90 فترة غير متداخلة" if (not b_no or b_no["n"] < 90) else "لم تنجح"
+        if b_ov and b_no and b_no["n"] >= 90 and b_ov["exp_pct"] > 0 and b_ov["t_hac"] >= thr and b_ov["ci_lo"] > 0 \
+                and out["control"]["mean_pct"] is not None and b_ov["exp_pct"] > out["control"]["mean_pct"]:
+            verdict_ = "نجحت (حسب المعيار المسجّل)"
+        out["configs"][name] = {"threshold_t": thr, "overlapping": b_ov, "non_overlapping": b_no, "verdict": verdict_}
+    return out
+
+
+def replicate(a, cfg, client):
+    now = int(time.time())
+    series = load_series(a, cfg, client, now)
+    dates, O, C, A = build_matrices(series, now - a.days * DAY, now - DAY)
+    cutoff = int(datetime.strptime(a.replication_before, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
+    cost_leg = 2 * (a.fee + a.slip) / 100.0
+    res = replicate_from_matrices(dates, O, C, A, cutoff, cost_leg, a.top_m, a.seed, a.control_seeds)
+    res["meta"] = {"symbols": len(series), "history_from": datetime.fromtimestamp(int(dates[0]), timezone.utc).strftime("%Y-%m-%d"),
+                   "cutoff": a.replication_before, "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+    return res
+
+
+def replication_md(res):
+    m = res["meta"]
+    L = [f"# تكرار تاريخي للزخم المقطعي قبل {m['cutoff']} ({m['generated']})", "",
+         f"- {m['symbols']} عقداً محمّلاً · أقدم يوم متاح: {m['history_from']} · نافذة التقييم: {res['window']['from']} → {res['window']['to']} ({res['window']['rows']} يوماً).",
+         "- التسجيل المسبق: الإضافة أ في `docs/PREREG_FORWARD.md` (مثبّتة قبل تحميل هذه البيانات). H1 = mom30، H2 = mom7، فترة الاحتفاظ 7 أيام فقط."]
+    if res.get("note"):
+        return "\n".join(L + ["", f"**{res['note']}**"])
+    e = res["eligible"]
+    L.append(f"- العقود المؤهلة يومياً: أدنى {e['min']}، وسيط {e['median']}، أعلى {e['max']}؛ أيام فيها ≥25 عقداً: {e['rows_with_25plus']} من {res['window']['rows']}.")
+    c = res["control"]
+    if c and c.get("mean_pct") is not None:
+        L.append(f"- الشاهد العشوائي (30 بذرة): متوسط {c['mean_pct']:+.3f}% لكل شريحة، t متوسط {c['t_mean']:+.2f}، أعلى t {c['t_max']:+.2f}.")
+    L += ["", "| الفرضية | فترات غير متداخلة | فوز % (لازم) / payoff | متوسط صافٍ % (محافظ متداخلة) [فترة 95%] | t (Newey-West) | الشرط | الحالة |", "|---|---|---|---|---|---|---|"]
+    for name, r in res["configs"].items():
+        o, n = r["overlapping"], r["non_overlapping"]
+        if o and n:
+            L.append(f"| {'H1' if name == 'mom30' else 'H2'} {name} | {n['n']} | {n['win'] * 100:.0f}% ({n['required_win'] * 100:.0f}%) / {n['payoff']:.2f} | "
+                     f"{o['exp_pct']:+.3f} [{o['ci_lo']:+.2f}, {o['ci_hi']:+.2f}] | {o['t_hac']:+.2f} | ≥ {r['threshold_t']} | {r['verdict']} |")
+        else:
+            L.append(f"| {name} | – | – | – | – | ≥ {r['threshold_t']} | {r['verdict']} |")
+    return "\n".join(L)
+
+
+def evaluate(a, cfg, client):
+    now = int(time.time())
+    series = load_series(a, cfg, client, now)
     dates, O, C, A = build_matrices(series, now - a.days * DAY, now - DAY)
     f, turn30 = features(C, A)
     first = 40                                                      # features need up to 30 days of history
@@ -259,10 +335,19 @@ def main():
     ap.add_argument("--seed", type=int, default=19)
     ap.add_argument("--config", default="config.toml")
     ap.add_argument("--out", default="reports/xsec")
+    ap.add_argument("--replication-before", default=None, help="YYYY-MM-DD: run ONLY the pre-registered replication on rows before this date")
     a = ap.parse_args()
     cfg = load_config(a.config)
     a.fee = cfg.trading.taker_fee_pct if a.fee is None else a.fee
     client = MexcClient(cfg.mexc)
+    if a.replication_before:
+        res = replicate(a, cfg, client)
+        md = replication_md(res)
+        Path(a.out).mkdir(parents=True, exist_ok=True)
+        (Path(a.out) / "xsec_replication.md").write_text(md, encoding="utf-8")
+        (Path(a.out) / "xsec_replication.json").write_text(json.dumps(res, ensure_ascii=False, default=float))
+        print(md)
+        return
     res = evaluate(a, cfg, client)
     md, cands, found = report(res, a)
     Path(a.out).mkdir(parents=True, exist_ok=True)
