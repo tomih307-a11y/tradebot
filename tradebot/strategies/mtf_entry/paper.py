@@ -176,7 +176,19 @@ def status(client) -> None:
 
 if __name__ == "__main__":
     c = MexcClient(__import__("tradebot.config", fromlist=["load_config"]).load_config("config.toml").mexc)
-    if len(sys.argv) >= 2 and sys.argv[1] == "early":
+    if len(sys.argv) == 3 and sys.argv[1] == "detail":
+        from tradebot.indicators import ema as _ema, pmo as _pmo
+        sym, now = sys.argv[2], int(time.time())
+        px = float(next(t["lastPrice"] for t in c.tickers() if t["symbol"] == sym))
+        print(f"{sym} السعر {px}")
+        for tf, w in M.FRAMES:
+            cl = np.asarray(fetch(c, sym, tf, now)["close"], float)
+            p_, sg, _ = _pmo(cl, M.PMO_L1, M.PMO_SCALE, M.PMO_L2, M.PMO_SIG)
+            m = _ema(cl, M.MACD_F) - _ema(cl, M.MACD_S)
+            ms = _ema(m, M.MACD_G)
+            st = M.tf_state(cl)
+            print(f"{tf:6} حالة {st:+d} · PMO {p_[-1]:+.3f} إشارة {sg[-1]:+.3f} ({'فوق' if p_[-1] > sg[-1] else 'تحت'}) · MACD {m[-1]:.6g} إشارة {ms[-1]:.6g} ({'فوق' if m[-1] > ms[-1] else 'تحت'}) · آخر إغلاق {cl[-1]:.6g} قبله {cl[-2]:.6g} · EMA21 {_ema(cl, 21)[-1]:.6g} EMA50 {_ema(cl, 50)[-1]:.6g}")
+    elif len(sys.argv) >= 2 and sys.argv[1] == "early":
         rows = early_snapshot(c, int(sys.argv[2]) if len(sys.argv) > 2 else TOP)
         print(f"فرص مبكرة: {len(rows)}")
         inside = lambda r: r["zone"][0] <= r["price"] <= r["zone"][1]
