@@ -42,7 +42,8 @@ def analyse(client, sym: str, now: int):
     states = {tf: M.tf_state(np.asarray(k["close"], float)) for tf, k in ks.items()}
     d, score = M.direction(states)
     z = ks[M.ZONE_TF]
-    zone = M.entry_zone(*(np.asarray(z[f], float) for f in ("high", "low", "close")), d)
+    lean = d or (1 if score > 0 else -1 if score < 0 else next((v for v in (states[tf] for tf, _ in M.FRAMES) if v), 0))
+    zone = M.entry_zone(*(np.asarray(z[f], float) for f in ("high", "low", "close")), lean)  # zone shown for the lean too; entries need d != 0
     k15 = ks["Min15"]
     hit = bool(len(k15["low"]) and M.touches(zone, float(k15["low"][-1]), float(k15["high"][-1])))
     return d, score, zone, hit, int(k15["time"][-1]) if len(k15["time"]) else 0, states
@@ -106,7 +107,7 @@ def run_loop(cfg, once: bool = False) -> None:
                 except Exception as e:
                     log.warning("%s: %s", sym, e)
                     continue
-                if not hit or st["seen"].get(sym) == bar_t or any(p["symbol"] == sym for p in st["open"]):
+                if d == 0 or not hit or st["seen"].get(sym) == bar_t or any(p["symbol"] == sym for p in st["open"]):
                     continue
                 if len(st["open"]) >= MAX_OPEN:
                     continue
@@ -152,10 +153,20 @@ if __name__ == "__main__":
     c = MexcClient(__import__("tradebot.config", fromlist=["load_config"]).load_config("config.toml").mexc)
     if len(sys.argv) >= 2 and sys.argv[1] == "scan":
         rows = snapshot(c, int(sys.argv[2]) if len(sys.argv) > 2 else TOP)
-        print(f"عدد العقود الممسوحة: {len(rows)}  ·  بلا اتجاه مجمّع: {sum(r['dir'] == 0 for r in rows)}")
-        for r in sorted((r for r in rows if r["dir"]), key=lambda r: (-r["hit"], -abs(r["score"]))):
+        def lean(r):  # always a side: sign of the weighted score, ties broken by the highest frames
+            if r["score"]:
+                return 1 if r["score"] > 0 else -1
+            return next((v for v in (r["states"][tf] for tf, _ in M.FRAMES) if v), 0)
+
+        print(f"العقود الممسوحة: {len(rows)}  ·  مؤكد: {sum(bool(r['dir']) for r in rows)}  ·  ميل ضعيف: {sum(not r['dir'] for r in rows)}")
+        for r in sorted(rows, key=lambda r: (-bool(r["dir"]), -abs(r["score"]))):
+            d = lean(r)
+            if d == 0:
+                continue
+            h = np.asarray
             z = f"{r['zone'][0]:.6g}-{r['zone'][1]:.6g}" if r["zone"] else "-"
-            print(f"{'🎯 داخل المنطقة' if r['hit'] else '   خارجها    '} {r['symbol']:<14} {'لونق' if r['dir'] == 1 else 'شورت'} نتيجة {r['score']:+.2f} · سعر {r['price']:.6g} · منطقة {z} · "
+            tag = "مؤكد" if r["dir"] else "ميل ضعيف"
+            print(f"{'لونق ' if d == 1 else 'شورت'} {tag:<8} {r['symbol']:<14} نتيجة {r['score']:+.2f} · سعر {r['price']:.6g} · منطقة {z}{' 🎯داخلها' if r['hit'] else ''} · "
                   + " ".join(f"{k[:4]}{'▲' if v == 1 else '▼' if v == -1 else '•'}" for k, v in r["states"].items()))
     elif len(sys.argv) >= 2 and sys.argv[1] == "status":
         status(c)
