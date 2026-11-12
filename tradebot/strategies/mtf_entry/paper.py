@@ -21,7 +21,8 @@ log = logging.getLogger("mtf_entry")
 STATE = Path("state/mtf_paper.json")
 START_BALANCE, MARGIN_PCT, MAX_OPEN, LEVERAGE, FEE, SLIP, TOP = 25.0, 0.10, 2, 5, 0.0004, 0.0005, 60
 NON_CRYPTO = {"CAD_USDT", "US30_USDT", "NAS100_USDT", "SPX500_USDT", "SPY_USDT", "QQQ_USDT", "IGV_USDT", "XLI_USDT", "SOXL_USDT", "SOXS_USDT",
-              "KORU_USDT", "GGLL_USDT", "MUU_USDT", "XAU_USDT", "XAUT_USDT", "SILVER_USDT", "UKOIL_USDT", "USOIL_USDT", "EUR_USDT", "GBP_USDT", "JPY_USDT", "XLV_USDT", "HK1810_USDT", "EWZ_USDT", "AMZU_USDT", "TSLL_USDT", "NVDL_USDT"}
+              "KORU_USDT", "GGLL_USDT", "MUU_USDT", "XAU_USDT", "XAUT_USDT", "SILVER_USDT", "UKOIL_USDT", "USOIL_USDT", "EUR_USDT", "GBP_USDT", "JPY_USDT", "XLV_USDT", "HK1810_USDT", "EWZ_USDT", "AMZU_USDT", "TSLL_USDT", "NVDL_USDT", "ZINC_USDT", "NICKEL_USDT", "COPPER_USDT", "ALUMINUM_USDT", "LEAD_USDT", "TIN_USDT", "PLATINUM_USDT", "PALLADIUM_USDT",
+              "NATGAS_USDT", "BRENT_USDT", "GOLD_USDT", "XAG_USDT", "EURUSD_USDT", "GBPUSD_USDT", "USDJPY_USDT", "DXY_USDT", "VIX_USDT"}
 BARS = {"Day1": 300, "Hour4": 300, "Min60": 300, "Min30": 300, "Min15": 300}
 
 
@@ -166,6 +167,36 @@ def early_snapshot(client, top: int = TOP) -> list[dict]:
     return out
 
 
+def top_movers(client, n: int = 50, min_turnover: float = 1_000_000) -> list[dict]:
+    """Top n crypto futures by absolute 24h change (liquid enough), each analysed on all frames; includes the last closed daily candle."""
+    now = int(time.time())
+    tick = [t for t in client.tickers() if str(t.get("symbol", "")).endswith("_USDT")
+            and not t["symbol"].endswith("STOCK_USDT") and t["symbol"] not in NON_CRYPTO and float(t.get("amount24") or 0) >= min_turnover]
+    tick.sort(key=lambda t: -abs(float(t.get("riseFallRate") or 0)))
+    out = []
+    for t in tick[:n]:
+        sym = t["symbol"]
+        try:
+            ks = {tf: fetch(client, sym, tf, now) for tf, _ in M.FRAMES}
+            states = {tf: M.tf_state(np.asarray(k["close"], float)) for tf, k in ks.items()}
+            d, score = M.direction(states)
+            dk = ks["Day1"]
+            o, c = float(dk["open"][-1]), float(dk["close"][-1])
+            h1 = {f: np.asarray(ks["Min60"][f], float) for f in ("high", "low", "close")}
+            atr = M.last_atr(h1["high"], h1["low"], h1["close"])
+            ef = float(M.ema(h1["close"], M.EMA_FAST)[-1])
+            price = float(t["lastPrice"])
+            lean = d or (1 if score > 0 else -1 if score < 0 else 0)
+            zone = M.entry_zone(h1["high"], h1["low"], h1["close"], lean) if lean else None
+        except Exception as e:
+            log.warning("%s: %s", sym, e)
+            continue
+        out.append({"symbol": sym, "chg24": float(t["riseFallRate"]) * 100, "price": price, "dir": d, "lean": lean, "score": score, "states": states,
+                    "daily": 1 if c > o else -1 if c < o else 0, "daily_pct": (c / o - 1) * 100, "zone": zone,
+                    "ext": ((price - ef) / atr * lean) if lean and atr == atr else float("nan")})
+    return out
+
+
 def status(client) -> None:
     st = load()
     px = {t["symbol"]: float(t["lastPrice"]) for t in client.tickers()}
@@ -178,7 +209,24 @@ def status(client) -> None:
 
 if __name__ == "__main__":
     c = MexcClient(__import__("tradebot.config", fromlist=["load_config"]).load_config("config.toml").mexc)
-    if len(sys.argv) == 3 and sys.argv[1] == "detail":
+    if len(sys.argv) >= 2 and sys.argv[1] == "top":
+        rows = top_movers(c, int(sys.argv[2]) if len(sys.argv) > 2 else 50)
+        side = lambda v: "لونق" if v == 1 else "شورت" if v == -1 else "محايد"
+        sym_ = lambda v: "▲" if v == 1 else "▼" if v == -1 else "•"
+        print(f"أعلى {len(rows)} عملة تغيراً خلال 24 ساعة (كريبتو فقط، سيولة ≥ 1M)")
+        for r in rows:
+            z = f"{r['zone'][0]:.6g}-{r['zone'][1]:.6g}" if r["zone"] else "-"
+            print(f"{r['symbol']:<14} تغير24س {r['chg24']:+6.1f}% · اليومية {sym_(r['daily'])}{r['daily_pct']:+.1f}% · الاتجاه {side(r['lean'])}"
+                  f"{' (مؤكد)' if r['dir'] else ' (ضعيف)'} {r['score']:+.2f} · امتداد {r['ext']:+.2f} · سعر {r['price']:.6g} · منطقة {z} · "
+                  + " ".join(f"{k[:4]}{sym_(v)}" for k, v in r["states"].items()))
+        good = [r for r in rows if r["dir"] and r["daily"] == r["dir"] and r["ext"] == r["ext"] and r["ext"] <= 1.0]
+        good.sort(key=lambda r: (-abs(r["score"]), r["ext"]))
+        print("=== مرشحة للدخول (اتجاه مؤكد + الشمعة اليومية معه + امتداد ≤ 1 ATR) ===")
+        for r in good[:5]:
+            print(f"{r['symbol']} {side(r['dir'])} نتيجة {r['score']:+.2f} امتداد {r['ext']:+.2f} منطقة {r['zone'][0]:.6g}-{r['zone'][1]:.6g} سعر {r['price']:.6g}")
+        if not good:
+            print("لا يوجد مرشح يحقق كل الشروط")
+    elif len(sys.argv) == 3 and sys.argv[1] == "detail":
         from tradebot.indicators import ema as _ema, pmo as _pmo
         sym, now = sys.argv[2], int(time.time())
         px = float(next(t["lastPrice"] for t in c.tickers() if t["symbol"] == sym))
