@@ -11,7 +11,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,8 +21,8 @@ jobs:
       - name: Live MTF scan (read-only, no orders)
         run: |
           mkdir -p reports/mtf_scan
-          python -m tradebot.strategies.mtf_entry.paper scan 60 2>&1 | tee reports/mtf_scan/scan.txt
-          python -m tradebot.strategies.mtf_entry.paper early 150 2>&1 | tee reports/mtf_scan/early.txt
+          python -m tradebot.strategies.mtf_entry.paper scan 1000 2>&1 | tee reports/mtf_scan/scan.txt
+          python -m tradebot.strategies.mtf_entry.paper early 1000 2>&1 | tee reports/mtf_scan/early.txt
       - name: Publish
         if: always()
         run: |
