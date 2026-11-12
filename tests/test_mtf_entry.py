@@ -35,3 +35,11 @@ def test_trailing_stop_only_ratchets_in_favour():
     assert M.ratchet(1, 104.0, 102.0) == 104.0 and M.ratchet(1, 104.0, 106.0) == 106.0
     assert M.ratchet(-1, 96.0, 98.0) == 96.0 and M.ratchet(-1, 96.0, 94.0) == 94.0
     assert M.ratchet(1, None, 100.0) == 100.0
+
+
+def test_turn_state_imminent_and_crossed():
+    g = np.array([-3.0, -2.5, -2.0, -1.5, -1.0, -0.5])            # closing at 0.5/bar -> crosses in ~1 bar
+    assert M.turn_state(g, 1)[0] == "imminent" and M.turn_state(g, -1) is None
+    assert M.turn_state(np.array([-1.0, -0.5, -0.2, 0.1, 0.4, 0.8]), 1) is None   # crossed 3 bars ago: late
+    assert M.turn_state(np.array([-1.0, -0.5, -0.2, -0.1, 0.1, 0.4]), 1) == ("crossed", 1)
+    assert M.turn_state(-g, -1)[0] == "imminent"

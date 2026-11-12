@@ -139,6 +139,27 @@ def snapshot(client, top: int = TOP) -> list[dict]:
     return out
 
 
+def early_snapshot(client, top: int = TOP) -> list[dict]:
+    """Read-only: contracts whose HTF bias is set, price is at/near the 1H zone, move not yet extended, 15m PMO about to cross / just crossed."""
+    now = int(time.time())
+    tick = [t for t in client.tickers() if str(t.get("symbol", "")).endswith("_USDT")]
+    tick.sort(key=lambda t: -float(t.get("amount24") or 0))
+    out = []
+    for rank, t in enumerate(tick[:top], 1):
+        sym = t["symbol"]
+        try:
+            ks = {tf: fetch(client, sym, tf, now) for tf in ("Day1", "Hour4", "Min60", "Min15")}
+            states = {tf: M.tf_state(np.asarray(ks[tf]["close"], float)) for tf in ("Day1", "Hour4")}
+            a = lambda tf, f: np.asarray(ks[tf][f], float)
+            su = M.early_setup(states, a("Min60", "high"), a("Min60", "low"), a("Min60", "close"), M.pmo_gap(a("Min15", "close")), float(t["lastPrice"]))
+        except Exception as e:
+            log.warning("%s: %s", sym, e)
+            continue
+        if su:
+            out.append({"symbol": sym, "rank": rank, "price": float(t["lastPrice"]), **su})
+    return out
+
+
 def status(client) -> None:
     st = load()
     px = {t["symbol"]: float(t["lastPrice"]) for t in client.tickers()}
@@ -151,7 +172,14 @@ def status(client) -> None:
 
 if __name__ == "__main__":
     c = MexcClient(__import__("tradebot.config", fromlist=["load_config"]).load_config("config.toml").mexc)
-    if len(sys.argv) >= 2 and sys.argv[1] == "scan":
+    if len(sys.argv) >= 2 and sys.argv[1] == "early":
+        rows = early_snapshot(c, int(sys.argv[2]) if len(sys.argv) > 2 else TOP)
+        print(f"فرص مبكرة: {len(rows)}")
+        for r in sorted(rows, key=lambda r: (r["turn"][0] != "imminent", r["turn"][1])):
+            kind = f"يتقاطع خلال ~{r['turn'][1]:.1f} شمعة 15د" if r["turn"][0] == "imminent" else f"تقاطع قبل {r['turn'][1]} شمعة"
+            print(f"{'لونق ' if r['dir'] == 1 else 'شورت'} {r['symbol']:<14} سعر {r['price']:.6g} · منطقة {r['zone'][0]:.6g}-{r['zone'][1]:.6g} · "
+                  f"بعد {r['away_atr']:+.2f} ATR عن المنطقة · امتداد {r['ext_atr']:+.2f} ATR · {kind}")
+    elif len(sys.argv) >= 2 and sys.argv[1] == "scan":
         rows = snapshot(c, int(sys.argv[2]) if len(sys.argv) > 2 else TOP)
         def lean(r):  # always a side: sign of the weighted score, ties broken by the highest frames
             if r["score"]:

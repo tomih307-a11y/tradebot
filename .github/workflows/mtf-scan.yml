@@ -22,6 +22,7 @@ jobs:
         run: |
           mkdir -p reports/mtf_scan
           python -m tradebot.strategies.mtf_entry.paper scan 60 2>&1 | tee reports/mtf_scan/scan.txt
+          python -m tradebot.strategies.mtf_entry.paper early 150 2>&1 | tee reports/mtf_scan/early.txt
       - name: Publish
         if: always()
         run: |
