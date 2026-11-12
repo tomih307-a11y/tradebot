@@ -20,6 +20,8 @@ from . import model as M
 log = logging.getLogger("mtf_entry")
 STATE = Path("state/mtf_paper.json")
 START_BALANCE, MARGIN_PCT, MAX_OPEN, LEVERAGE, FEE, SLIP, TOP = 25.0, 0.10, 2, 5, 0.0004, 0.0005, 60
+NON_CRYPTO = {"CAD_USDT", "US30_USDT", "NAS100_USDT", "SPX500_USDT", "SPY_USDT", "QQQ_USDT", "IGV_USDT", "XLI_USDT", "SOXL_USDT", "SOXS_USDT",
+              "KORU_USDT", "GGLL_USDT", "MUU_USDT", "XAU_USDT", "XAUT_USDT", "SILVER_USDT", "UKOIL_USDT", "USOIL_USDT", "EUR_USDT", "GBP_USDT", "JPY_USDT"}
 BARS = {"Day1": 300, "Hour4": 300, "Min60": 300, "Min30": 300, "Min15": 300}
 
 
@@ -147,6 +149,8 @@ def early_snapshot(client, top: int = TOP) -> list[dict]:
     out = []
     for rank, t in enumerate(tick[:top], 1):
         sym = t["symbol"]
+        if sym.endswith("STOCK_USDT") or sym in NON_CRYPTO:
+            continue
         try:
             ks = {tf: fetch(client, sym, tf, now) for tf in ("Day1", "Hour4", "Min60", "Min15")}
             states = {tf: M.tf_state(np.asarray(ks[tf]["close"], float)) for tf in ("Day1", "Hour4")}
@@ -175,9 +179,10 @@ if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "early":
         rows = early_snapshot(c, int(sys.argv[2]) if len(sys.argv) > 2 else TOP)
         print(f"فرص مبكرة: {len(rows)}")
-        for r in sorted(rows, key=lambda r: (r["turn"][0] != "imminent", r["turn"][1])):
+        inside = lambda r: r["zone"][0] <= r["price"] <= r["zone"][1]
+        for r in sorted(rows, key=lambda r: (not inside(r), r["turn"][0] != "imminent", r["turn"][1])):
             kind = f"يتقاطع خلال ~{r['turn'][1]:.1f} شمعة 15د" if r["turn"][0] == "imminent" else f"تقاطع قبل {r['turn'][1]} شمعة"
-            print(f"{'لونق ' if r['dir'] == 1 else 'شورت'} {r['symbol']:<14} سعر {r['price']:.6g} · منطقة {r['zone'][0]:.6g}-{r['zone'][1]:.6g} · "
+            print(f"{'داخل المنطقة ' if inside(r) else 'قرب المنطقة '}{'لونق ' if r['dir'] == 1 else 'شورت'} {r['symbol']:<14} سعر {r['price']:.6g} · منطقة {r['zone'][0]:.6g}-{r['zone'][1]:.6g} · "
                   f"بعد {r['away_atr']:+.2f} ATR عن المنطقة · امتداد {r['ext_atr']:+.2f} ATR · {kind}")
     elif len(sys.argv) >= 2 and sys.argv[1] == "scan":
         rows = snapshot(c, int(sys.argv[2]) if len(sys.argv) > 2 else TOP)
