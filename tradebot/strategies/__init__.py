@@ -6,6 +6,7 @@ REGISTRY = {
     "telegram_signals": "tradebot.strategies.telegram_signals",
     "multi_agent": "tradebot.strategies.multi_agent",
     "smc_strategy": "tradebot.strategies.smc_strategy",
+    "mtf_entry": "tradebot.strategies.mtf_entry",
 }
 
 

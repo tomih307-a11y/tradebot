@@ -87,3 +87,9 @@ python -m tradebot live                                      # trading.dry_run=t
 - لم تتوفر شبكة إلى MEXC أثناء التطوير: **لم يُختبر أي نداء حقيقي** (الشموع، التمويل، الأوامر، أوامر الوقف `stoporder/*`). مسارات وحقول الجزء الخاص في `mexc/client.py` مكتوبة من الوثائق العامة وتحتاج مراجعة بحجم صغير و`dry_run=true` أولاً.
 - اختبار TradingView (رقم 1) يحتاج ملفات CSV منك: `tests/data/tv_btc_15m.csv` و`tv_btc_60m.csv` (الأعمدة `time,pmo,signal`؛ `time` = epoch ثوانٍ لفتح الشمعة) + شموع BTC المخزنة في `data/cache/` (تُنشأ بتشغيل الباكتست).
 - رسم Taker الافتراضي (0.04%) يجب أن تطابقه مع حسابك.
+
+## استراتيجية mtf_entry (PMO + MACD عبر الفريمات)
+- مؤشر TradingView: `pine/mtf_pmo_macd_entry.pine` (يومي، 4س، ساعة، 30د، 15د؛ اتجاه مجمّع + منطقة دخول EMA21/50 على الساعة).
+- البوت (ورقي فقط، بلا اختبار تاريخي بطلب المستخدم): `python -m tradebot --strategy mtf_entry live`
+- بلا وقف وبلا هدف مؤقتاً: تُغلق الصفقة يدوياً `python -m tradebot.strategies.mtf_entry.paper close SYMBOL`، وللحالة `... status`.
+- الحدود: 10% هامش للصفقة، صفقتان كحد أقصى، ورقي (`dry_run = true`).
