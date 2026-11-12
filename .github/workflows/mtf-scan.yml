@@ -1,0 +1,33 @@
+name: mtf-scan
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-mtf-scan.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Live MTF scan (read-only, no orders)
+        run: |
+          mkdir -p reports/mtf_scan
+          python -m tradebot.strategies.mtf_entry.paper scan 60 2>&1 | tee reports/mtf_scan/scan.txt
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/mtf_scan/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b mtf-scan-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "mtf scan" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin mtf-scan-results

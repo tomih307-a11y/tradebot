@@ -121,6 +121,23 @@ def run_loop(cfg, once: bool = False) -> None:
         time.sleep(60)
 
 
+def snapshot(client, top: int = TOP) -> list[dict]:
+    """Read-only live scan: direction, score, zone and whether the last closed 15m bar touches it, for the top contracts by liquidity."""
+    now = int(time.time())
+    tick = [t for t in client.tickers() if str(t.get("symbol", "")).endswith("_USDT")]
+    tick.sort(key=lambda t: -float(t.get("amount24") or 0))
+    out = []
+    for rank, t in enumerate(tick[:top], 1):
+        try:
+            d, score, zone, hit, bar_t, states = analyse(client, t["symbol"], now)
+        except Exception as e:
+            log.warning("%s: %s", t["symbol"], e)
+            continue
+        out.append({"symbol": t["symbol"], "rank": rank, "dir": d, "score": score, "zone": zone, "hit": hit,
+                    "price": float(t["lastPrice"]), "states": states})
+    return out
+
+
 def status(client) -> None:
     st = load()
     px = {t["symbol"]: float(t["lastPrice"]) for t in client.tickers()}
@@ -133,7 +150,14 @@ def status(client) -> None:
 
 if __name__ == "__main__":
     c = MexcClient(__import__("tradebot.config", fromlist=["load_config"]).load_config("config.toml").mexc)
-    if len(sys.argv) >= 2 and sys.argv[1] == "status":
+    if len(sys.argv) >= 2 and sys.argv[1] == "scan":
+        rows = snapshot(c, int(sys.argv[2]) if len(sys.argv) > 2 else TOP)
+        print(f"عدد العقود الممسوحة: {len(rows)}  ·  بلا اتجاه مجمّع: {sum(r['dir'] == 0 for r in rows)}")
+        for r in sorted((r for r in rows if r["dir"]), key=lambda r: (-r["hit"], -abs(r["score"]))):
+            z = f"{r['zone'][0]:.6g}-{r['zone'][1]:.6g}" if r["zone"] else "-"
+            print(f"{'🎯 داخل المنطقة' if r['hit'] else '   خارجها    '} {r['symbol']:<14} {'لونق' if r['dir'] == 1 else 'شورت'} نتيجة {r['score']:+.2f} · سعر {r['price']:.6g} · منطقة {z} · "
+                  + " ".join(f"{k[:4]}{'▲' if v == 1 else '▼' if v == -1 else '•'}" for k, v in r["states"].items()))
+    elif len(sys.argv) >= 2 and sys.argv[1] == "status":
         status(c)
     elif len(sys.argv) == 3 and sys.argv[1] == "close":
         st = load()
