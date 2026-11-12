@@ -1,0 +1,136 @@
+//@version=6
+indicator("MTF PMO+MACD Entry Zone", "MTF-ENTRY", overlay = true, max_labels_count = 200)
+
+// ─────────────────────────────────────────────────────────────
+// يقرأ PMO و MACD على عدة فريمات معاً (من اليومي إلى 15 دقيقة)
+// ويعطي: اتجاهاً مجمّعاً + منطقة دخول مثالية.
+// كل القراءات من شموع مغلقة فقط (لا إعادة رسم).
+// ─────────────────────────────────────────────────────────────
+
+// ===== Inputs =====
+float sourceInput = input.source(close, "Source")
+
+string G1 = "PMO"
+int pmoL1 = input.int(35, "PMO Length 1", 1, group = G1)
+int pmoL2 = input.int(20, "PMO Length 2", 1, group = G1)
+int pmoSg = input.int(10, "PMO Signal",   1, group = G1)
+
+string G2 = "MACD"
+int macdF = input.int(12, "Fast",   1, group = G2)
+int macdS = input.int(26, "Slow",   1, group = G2)
+int macdG = input.int(9,  "Signal", 1, group = G2)
+
+string G3 = "الفريمات والأوزان"
+string tf1 = input.timeframe("D",   "Frame 1", group = G3)
+int    w1  = input.int(5, "Weight 1", 0, group = G3)
+string tf2 = input.timeframe("240", "Frame 2", group = G3)
+int    w2  = input.int(4, "Weight 2", 0, group = G3)
+string tf3 = input.timeframe("60",  "Frame 3", group = G3)
+int    w3  = input.int(3, "Weight 3", 0, group = G3)
+string tf4 = input.timeframe("30",  "Frame 4", group = G3)
+int    w4  = input.int(2, "Weight 4", 0, group = G3)
+string tf5 = input.timeframe("15",  "Frame 5", group = G3)
+int    w5  = input.int(1, "Weight 5", 0, group = G3)
+float  thr = input.float(0.5, "حد الاتجاه (0..1)", 0.0, 1.0, 0.05, group = G3,
+     tooltip = "الاتجاه شراء إذا كانت النتيجة المرجّحة ≥ الحد، وبيع إذا ≤ -الحد، وإلا محايد")
+
+string G4 = "منطقة الدخول"
+string entryTf = input.timeframe("60", "فريم المنطقة", group = G4)
+int   emaFastL = input.int(21, "EMA سريع", 1, group = G4)
+int   emaSlowL = input.int(50, "EMA بطيء", 1, group = G4)
+int   atrL     = input.int(14, "ATR", 1, group = G4)
+float bufAtr   = input.float(0.25, "هامش خارجي (× ATR)", 0.0, group = G4)
+
+bool showTable = input.bool(true, "إظهار جدول الفريمات")
+
+// ===== Calculations =====
+// تمهيد PMO: معامل 2/len (وليس 2/(len+1))
+smooth(float x, float len) =>
+    float a = 2.0 / len
+    float s = na
+    s := na(s[1]) ? x : (x - s[1]) * a + s[1]
+    s
+
+// يعيد قيم آخر شمعة مغلقة: [pmo, pmoSignal, macd, macdSignal]
+tfData(float src) =>
+    float roc  = (src / src[1] - 1.0) * 100.0
+    float pmo  = smooth(10.0 * smooth(roc, pmoL1), pmoL2)
+    float psig = ta.ema(pmo, pmoSg)
+    float m    = ta.ema(src, macdF) - ta.ema(src, macdS)
+    float msig = ta.ema(m, macdG)
+    [pmo[1], psig[1], m[1], msig[1]]
+
+// حالة الفريم: +1 صاعد (المؤشران معاً)، -1 هابط، 0 مختلطان
+state(float pmo, float psig, float m, float msig) =>
+    int r = 0
+    if not (na(pmo) or na(psig) or na(m) or na(msig))
+        int a = pmo > psig ? 1 : -1
+        int b = m > msig ? 1 : -1
+        r := (a + b) / 2
+    r
+
+[p1, ps1, m1, ms1] = request.security(syminfo.tickerid, tf1, tfData(sourceInput), lookahead = barmerge.lookahead_on)
+[p2, ps2, m2, ms2] = request.security(syminfo.tickerid, tf2, tfData(sourceInput), lookahead = barmerge.lookahead_on)
+[p3, ps3, m3, ms3] = request.security(syminfo.tickerid, tf3, tfData(sourceInput), lookahead = barmerge.lookahead_on)
+[p4, ps4, m4, ms4] = request.security(syminfo.tickerid, tf4, tfData(sourceInput), lookahead = barmerge.lookahead_on)
+[p5, ps5, m5, ms5] = request.security(syminfo.tickerid, tf5, tfData(sourceInput), lookahead = barmerge.lookahead_on)
+
+int s1 = state(p1, ps1, m1, ms1)
+int s2 = state(p2, ps2, m2, ms2)
+int s3 = state(p3, ps3, m3, ms3)
+int s4 = state(p4, ps4, m4, ms4)
+int s5 = state(p5, ps5, m5, ms5)
+
+float wSum  = w1 + w2 + w3 + w4 + w5
+float score = wSum > 0 ? (s1 * w1 + s2 * w2 + s3 * w3 + s4 * w4 + s5 * w5) / wSum : 0.0
+int dir = score >= thr ? 1 : score <= -thr ? -1 : 0
+
+// منطقة الدخول: بين EMA السريع والبطيء على فريم المنطقة + هامش ATR
+zoneData() =>
+    [ta.ema(close, emaFastL)[1], ta.ema(close, emaSlowL)[1], ta.atr(atrL)[1]]
+[emaF, emaS, atrV] = request.security(syminfo.tickerid, entryTf, zoneData(), lookahead = barmerge.lookahead_on)
+
+float zMax = math.max(emaF, emaS)
+float zMin = math.min(emaF, emaS)
+float zHi  = dir == 1 ? zMax : dir == -1 ? zMax + bufAtr * atrV : na
+float zLo  = dir == 1 ? zMin - bufAtr * atrV : dir == -1 ? zMin : na
+
+bool inZone    = dir != 0 and not na(zHi) and low <= zHi and high >= zLo
+bool longEntry  = dir == 1  and inZone and not inZone[1] and close >= zLo
+bool shortEntry = dir == -1 and inZone and not inZone[1] and close <= zHi
+
+// ===== Plot =====
+color zc = dir == 1 ? color.new(color.teal, 80) : color.new(color.red, 80)
+pHi = plot(zHi, "Zone high", dir == 1 ? color.teal : color.red, 1)
+pLo = plot(zLo, "Zone low",  dir == 1 ? color.teal : color.red, 1)
+fill(pHi, pLo, zc, "Entry zone")
+bgcolor(dir == 1 ? color.new(color.teal, 94) : dir == -1 ? color.new(color.red, 94) : na)
+
+plotshape(longEntry,  "Long entry",  shape.triangleup,   location.belowbar, color.teal, size = size.small, text = "L")
+plotshape(shortEntry, "Short entry", shape.triangledown, location.abovebar, color.red,  size = size.small, text = "S")
+
+// ===== Table =====
+txt(int s) => s == 1 ? "▲" : s == -1 ? "▼" : "•"
+col(int s) => s == 1 ? color.teal : s == -1 ? color.red : color.gray
+
+var table t = table.new(position.top_right, 3, 7, border_width = 1)
+if showTable and barstate.islast
+    table.cell(t, 0, 0, "Frame",  text_color = color.white, bgcolor = color.new(color.gray, 40))
+    table.cell(t, 1, 0, "State",  text_color = color.white, bgcolor = color.new(color.gray, 40))
+    table.cell(t, 2, 0, "Weight", text_color = color.white, bgcolor = color.new(color.gray, 40))
+    string[] names = array.from(tf1, tf2, tf3, tf4, tf5)
+    int[]    sts   = array.from(s1, s2, s3, s4, s5)
+    int[]    wts   = array.from(w1, w2, w3, w4, w5)
+    for i = 0 to 4
+        int st = array.get(sts, i)
+        table.cell(t, 0, i + 1, array.get(names, i), text_color = color.white)
+        table.cell(t, 1, i + 1, txt(st), text_color = col(st))
+        table.cell(t, 2, i + 1, str.tostring(array.get(wts, i)), text_color = color.white)
+    string verdict = dir == 1 ? "شراء" : dir == -1 ? "بيع" : "محايد"
+    table.cell(t, 0, 6, "Total", text_color = color.white)
+    table.cell(t, 1, 6, verdict, text_color = col(dir))
+    table.cell(t, 2, 6, str.tostring(score, "#.##"), text_color = color.white)
+
+// ===== Alerts =====
+alertcondition(longEntry,  "Long entry zone",  "MTF: دخول شراء داخل المنطقة")
+alertcondition(shortEntry, "Short entry zone", "MTF: دخول بيع داخل المنطقة")
