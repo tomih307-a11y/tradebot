@@ -11,6 +11,7 @@ PMO_L1, PMO_L2, PMO_SIG, PMO_SCALE = 35, 20, 10, 10
 MACD_F, MACD_S, MACD_G = 12, 26, 9
 THRESHOLD = 0.5
 ZONE_TF, EMA_FAST, EMA_SLOW, ATR_LEN, BUF_ATR = "Min60", 21, 50, 14, 0.25
+TRAIL_ATR = 3.0   # trailing stop distance in ATR(14) of the zone timeframe; target is open
 MIN_BARS = 120
 
 
@@ -49,3 +50,19 @@ def entry_zone(h, l, c, d: int):
 
 def touches(zone, bar_low: float, bar_high: float) -> bool:
     return zone is not None and bar_low <= zone[1] and bar_high >= zone[0]
+
+
+def last_atr(h, l, c) -> float:
+    a = atr_rma(h, l, c, ATR_LEN)
+    return float(a[-1]) if len(a) else float("nan")
+
+
+def trail_stop(side: int, extreme: float, atr: float, mult: float = TRAIL_ATR) -> float:
+    """Chandelier trail: highest price since entry - mult*ATR (long), lowest + mult*ATR (short). Caller ratchets it (never loosens)."""
+    return extreme - mult * atr if side == 1 else extreme + mult * atr
+
+
+def ratchet(side: int, old: float | None, new: float) -> float:
+    if old is None:
+        return new
+    return max(old, new) if side == 1 else min(old, new)

@@ -1,6 +1,6 @@
 """Paper runner: scans top-liquidity contracts, opens a paper position when a 15m bar touches the entry zone in an aligned direction.
-No stop and no target by design (user's choice, temporary): positions stay open until closed by hand:
-    python -m tradebot.strategies.mtf_entry.paper close SYMBOL     |     ... status
+Open target + trailing stop (chandelier: extreme since entry -/+ 3 x ATR(14) of the 1H frame, only ratchets in favour); the stop is checked every loop.
+Manual close:  python -m tradebot.strategies.mtf_entry.paper close SYMBOL     |     ... status
 Limits: 10% of balance margin per trade, max 2 concurrent. Never sends real orders."""
 from __future__ import annotations
 
@@ -48,6 +48,25 @@ def analyse(client, sym: str, now: int):
     return d, score, zone, hit, int(k15["time"][-1]) if len(k15["time"]) else 0, states
 
 
+def manage(client, st: dict, px: dict, now: int, nt) -> None:
+    """Update the trailing stop of every open paper position with the latest price; close it when the stop is hit."""
+    for pos in list(st["open"]):
+        price = px.get(pos["symbol"])
+        if not price:
+            continue
+        d = 1 if pos["side"] == "long" else -1
+        ext = pos.get("extreme", pos["entry"])
+        ext = max(ext, price) if d == 1 else min(ext, price)
+        pos["extreme"] = ext
+        k = fetch(client, pos["symbol"], M.ZONE_TF, now)
+        atr = M.last_atr(*(np.asarray(k[f], float) for f in ("high", "low", "close")))
+        if atr == atr:
+            pos["stop"] = M.ratchet(d, pos.get("stop"), M.trail_stop(d, ext, atr))
+        if pos.get("stop") is not None and (price <= pos["stop"] if d == 1 else price >= pos["stop"]):
+            pnl = close_pos(st, pos, price, now)
+            nt.send(f"🛑 ورقي {pos['symbol']} أُغلقت بالوقف المتحرك @ {price:.6g} · {pnl:+.3f} USDT")
+
+
 def open_pos(st: dict, sym: str, d: int, price: float, now: int) -> dict:
     margin = st["balance"] * MARGIN_PCT
     px = price * (1 + SLIP * d)
@@ -79,6 +98,7 @@ def run_loop(cfg, once: bool = False) -> None:
             now, st = int(time.time()), load()
             tick = [t for t in client.tickers() if str(t.get("symbol", "")).endswith("_USDT")]
             tick.sort(key=lambda t: -float(t.get("amount24") or 0))
+            manage(client, st, {t["symbol"]: float(t["lastPrice"]) for t in tick}, now, nt)
             for t in tick[:TOP]:
                 sym = t["symbol"]
                 try:
@@ -92,7 +112,7 @@ def run_loop(cfg, once: bool = False) -> None:
                     continue
                 st["seen"][sym] = bar_t
                 p = open_pos(st, sym, d, float(t["lastPrice"]), now)
-                nt.send(f"🎯 ورقي {sym} {'لونق' if d == 1 else 'شورت'} @ {p['entry']:.6g} · نتيجة {score:+.2f} · منطقة {zone[0]:.6g}-{zone[1]:.6g} · بلا وقف ولا هدف (أغلق يدوياً)")
+                nt.send(f"🎯 ورقي {sym} {'لونق' if d == 1 else 'شورت'} @ {p['entry']:.6g} · نتيجة {score:+.2f} · منطقة {zone[0]:.6g}-{zone[1]:.6g} · هدف مفتوح + وقف متحرك")
             save(st)
         except Exception:
             log.exception("scan failed")
@@ -107,7 +127,7 @@ def status(client) -> None:
     print(f"الرصيد: {st['balance']:.2f} USDT")
     for p in st["open"]:
         d = 1 if p["side"] == "long" else -1
-        print(f"{p['symbol']} {p['side']} دخول {p['entry']:.6g} الآن {px.get(p['symbol'], float('nan')):.6g} · غير محقق {(px.get(p['symbol'], p['entry']) - p['entry']) * p['qty'] * d:+.3f}")
+        print(f"{p['symbol']} {p['side']} دخول {p['entry']:.6g} الآن {px.get(p['symbol'], float('nan')):.6g} · غير محقق {(px.get(p['symbol'], p['entry']) - p['entry']) * p['qty'] * d:+.3f} · وقف {p.get('stop') or float('nan'):.6g}")
     print(f"صفقات مغلقة: {len(st['closed'])}")
 
 

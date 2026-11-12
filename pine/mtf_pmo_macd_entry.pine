@@ -40,6 +40,8 @@ int   emaFastL = input.int(21, "EMA سريع", 1, group = G4)
 int   emaSlowL = input.int(50, "EMA بطيء", 1, group = G4)
 int   atrL     = input.int(14, "ATR", 1, group = G4)
 float bufAtr   = input.float(0.25, "هامش خارجي (× ATR)", 0.0, group = G4)
+float trailMult = input.float(3.0, "الوقف المتحرك (× ATR فريم المنطقة)", 0.5, group = G4,
+     tooltip = "الهدف مفتوح. الوقف = أعلى سعر منذ الدخول − المضاعف × ATR (شراء)، والعكس للبيع. لا يتراجع أبداً")
 
 bool showTable = input.bool(true, "إظهار جدول الفريمات")
 
@@ -98,6 +100,26 @@ float zLo  = dir == 1 ? zMin - bufAtr * atrV : dir == -1 ? zMin : na
 bool inZone    = dir != 0 and not na(zHi) and low <= zHi and high >= zLo
 bool longEntry  = dir == 1  and inZone and not inZone[1] and close >= zLo
 bool shortEntry = dir == -1 and inZone and not inZone[1] and close <= zHi
+
+// ===== Trailing stop (target is open) =====
+var int   pos   = 0
+var float trail = na
+if pos == 0
+    if longEntry
+        pos := 1
+        trail := close - trailMult * atrV
+    else if shortEntry
+        pos := -1
+        trail := close + trailMult * atrV
+else if pos == 1
+    trail := math.max(trail, high - trailMult * atrV)
+    if low <= trail
+        pos := 0
+else
+    trail := math.min(trail, low + trailMult * atrV)
+    if high >= trail
+        pos := 0
+plot(pos != 0 ? trail : na, "Trailing stop", color.orange, 2, plot.style_linebr)
 
 // ===== Plot =====
 color zc = dir == 1 ? color.new(color.teal, 80) : color.new(color.red, 80)

@@ -28,3 +28,10 @@ def test_paper_open_close_roundtrip():
     assert abs(p["margin"] - 2.5) < 1e-9
     pnl = P.close_pos(st, p, 110.0, 1)
     assert pnl > 0 and not st["open"] and len(st["closed"]) == 1
+
+
+def test_trailing_stop_only_ratchets_in_favour():
+    assert M.trail_stop(1, 110.0, 2.0) == 104.0 and M.trail_stop(-1, 90.0, 2.0) == 96.0
+    assert M.ratchet(1, 104.0, 102.0) == 104.0 and M.ratchet(1, 104.0, 106.0) == 106.0
+    assert M.ratchet(-1, 96.0, 98.0) == 96.0 and M.ratchet(-1, 96.0, 94.0) == 94.0
+    assert M.ratchet(1, None, 100.0) == 100.0
