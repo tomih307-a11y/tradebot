@@ -108,3 +108,18 @@ def test_precomputed_squeeze_matches_single_call():
     s = M.squeeze_at(pre, o, h, l, c, v, len(c) - 1)
     r = M.squeeze_breakout(o, h, l, c, v)
     assert s and r and s["dir"] == r["dir"] and s["trend"] == r["trend"] and abs(s["vol_x"] - r["vol_x"]) < 1e-9
+
+
+def test_event_merge_flags_and_label_no_lookahead():
+    from tradebot.strategies.mtf_entry import boom_watch as B
+    n = 3000
+    c = np.full(n, 100.0); o = c.copy()
+    for j in (500, 505, 2000):                                  # 500 & 505 same direction within 12h -> one event
+        c[j] = 112.0
+    ev = B.event_starts(o, c)
+    assert [j for j, _ in ev] == [500, 2000]
+    ev_idx = np.array([j for j, _ in ev])
+    bw = np.full(n, 0.01)
+    assert B.flags(ev_idx, 499, bw)["R3"] is False and B.flags(ev_idx, 520, bw)["R3"] is True       # event unknown before it starts
+    assert B.label_and_lead(ev, 450)[0] is True and B.label_and_lead(ev, 450)[1] == 50
+    assert B.label_and_lead(ev, 520)[0] is False

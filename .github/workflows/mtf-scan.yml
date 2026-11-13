@@ -21,7 +21,7 @@ jobs:
       - name: Live MTF scan (read-only, no orders)
         run: |
           mkdir -p reports/mtf_scan
-          python -m tradebot.strategies.mtf_entry.boom_study 30 reports/mtf_scan/boom_study.txt 2>&1 | tail -80
+          python -m tradebot.strategies.mtf_entry.boom_watch study 90 reports/mtf_scan/watch_study.txt 2>&1 | tail -60
       - name: Publish
         if: always()
         run: |
