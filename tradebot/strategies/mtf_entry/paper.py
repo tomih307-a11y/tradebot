@@ -219,6 +219,12 @@ if __name__ == "__main__":
             print(f"{r['symbol']:<14} تغير24س {r['chg24']:+6.1f}% · اليومية {sym_(r['daily'])}{r['daily_pct']:+.1f}% · الاتجاه {side(r['lean'])}"
                   f"{' (مؤكد)' if r['dir'] else ' (ضعيف)'} {r['score']:+.2f} · امتداد {r['ext']:+.2f} · سعر {r['price']:.6g} · منطقة {z} · "
                   + " ".join(f"{k[:4]}{sym_(v)}" for k, v in r["states"].items()))
+        print("=== اتجاه مؤكد بعد الشمعة اليومية (المؤشران على اليومي متفقان + لون الشمعة معهما + 4 ساعات لا يعاكس) ===")
+        conf = [r for r in rows if r["states"]["Day1"] != 0 and r["daily"] == r["states"]["Day1"] and r["states"]["Hour4"] != -r["states"]["Day1"]]
+        for r in sorted(conf, key=lambda r: -abs(r["score"])):
+            print(f"{side(r['states']['Day1'])} {r['symbol']:<14} اليومية {r['daily_pct']:+.1f}% · نتيجة كل الفريمات {r['score']:+.2f} · امتداد {r['ext']:+.2f} · سعر {r['price']:.6g}")
+        if not conf:
+            print("لا توجد عملة تحقق الشرط")
         good = [r for r in rows if r["dir"] and r["daily"] == r["dir"] and r["ext"] == r["ext"] and r["ext"] <= 1.0]
         good.sort(key=lambda r: (-abs(r["score"]), r["ext"]))
         print("=== مرشحة للدخول (اتجاه مؤكد + الشمعة اليومية معه + امتداد ≤ 1 ATR) ===")
