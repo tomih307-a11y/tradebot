@@ -21,7 +21,7 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Tests
         run: python -m pytest tests/test_mtf_entry.py -q
-      - name: Early signs study (rules: docs/EARLY_SIGNS.md)
+      - name: "Early signs study (rules - docs/EARLY_SIGNS.md)"
         run: |
           mkdir -p reports/early
           python -m tradebot.strategies.mtf_entry.early_signs 90 reports/early/early_signs.txt 2>&1 | tail -40
