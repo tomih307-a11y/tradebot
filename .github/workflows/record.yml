@@ -1,0 +1,56 @@
+name: record-market-data
+# يسجّل لقطة سوق كل 5 دقائق (أسعار، سيولة، مراكز مفتوحة، تمويل، عمق الدفتر) في الفرع market-data.
+# بيانات عامة من MEXC فقط، بلا مفاتيح. المستودع عام، فالبيانات عامة أيضاً.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-record.txt"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: record-market-data
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Snapshot
+        run: python -m tradebot.strategies.mtf_entry.recorder snapshot /tmp/snap
+      - name: Publish to market-data branch
+        run: |
+          set -e
+          REPO="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          if git ls-remote --exit-code --heads "$REPO" market-data >/dev/null 2>&1; then
+            git clone -q --depth 1 -b market-data "$REPO" /tmp/data
+          else
+            mkdir /tmp/data && git -C /tmp/data init -q
+          fi
+          cp /tmp/snap/*.csv.gz /tmp/data/
+          python -m tradebot.strategies.mtf_entry.recorder consolidate /tmp/data
+          python - <<'PY'
+          import os, time
+          d = "/tmp/data"
+          cutoff = time.strftime("%Y%m%d", time.gmtime(time.time() - 120 * 86400))
+          for n in os.listdir(d):
+              if n.startswith("day_") and n[4:12] < cutoff:
+                  os.remove(os.path.join(d, n))
+          PY
+          cd /tmp/data
+          git config user.name "recorder-bot" && git config user.email "bot@example.com"
+          git checkout -q --orphan snap
+          git add -A
+          git commit -q -m "market data $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "$REPO" snap:market-data
