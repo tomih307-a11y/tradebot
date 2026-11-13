@@ -148,3 +148,60 @@ def breakout(o, h, l, c, v, lookback: int = BO_LOOKBACK):
         return {"dir": d, "age": age, "vol_x": float(v[i] / med), "beyond_pct": float((c[i] / (hi if up else lo) - 1) * 100 * d),
                 "moved_pct": float(moved), "range_lo": lo, "range_hi": hi}
     return None
+
+
+# ───────── squeeze breakout (Bollinger) — adapts to each coin's own volatility; MA50/200 only classify (parameters are untested guesses) ─────────
+SQ_BB_LEN, SQ_BB_K, SQ_HIST, SQ_PCT, SQ_VOL_MULT = 20, 2.0, 100, 0.20, 3.0
+SQ_BODY_FRAC, SQ_MAX_MOVED_PCT, SQ_VOL_BARS = 0.6, 15.0, 96
+
+
+def _sma(x: np.ndarray, n: int) -> np.ndarray:
+    out = np.full(len(x), np.nan)
+    if len(x) >= n:
+        cs = np.cumsum(np.insert(x, 0, 0.0))
+        out[n - 1:] = (cs[n:] - cs[:-n]) / n
+    return out
+
+
+def _bb(c: np.ndarray):
+    mid = _sma(c, SQ_BB_LEN)
+    sd = np.full(len(c), np.nan)
+    for i in range(SQ_BB_LEN - 1, len(c)):
+        sd[i] = np.std(c[i - SQ_BB_LEN + 1:i + 1])
+    return mid, mid + SQ_BB_K * sd, mid - SQ_BB_K * sd
+
+
+def squeeze_breakout(o, h, l, c, v):
+    """Last two CLOSED bars. Squeeze = Bollinger bandwidth of the bar BEFORE the break is in the lowest SQ_PCT of the last SQ_HIST bars (relative to the coin itself).
+    Break = close outside the pre-break band, volume >= SQ_VOL_MULT x median of the previous SQ_VOL_BARS bars, strong body, not already run > SQ_MAX_MOVED_PCT.
+    Direction = the side that broke. Trend label from SMA50/SMA200: 'with' if beyond both on the break side, 'against' if beyond both on the other side, else 'mixed'.
+    Returns dict(dir, age, vol_x, squeeze_pct, beyond_pct, moved_pct, trend) or None."""
+    n = len(c)
+    if n < 215:
+        return None
+    mid, up, lo = _bb(c)
+    bw = (up - lo) / mid
+    m50, m200 = _sma(c, 50), _sma(c, 200)
+    for age in (0, 1):
+        i = n - 1 - age
+        hist = bw[i - SQ_HIST:i]                        # bandwidth of bars before the break bar
+        if np.isnan(hist).any() or np.isnan(m200[i]):
+            continue
+        rank = float((hist < bw[i - 1]).mean())          # 0 = narrowest in history
+        if rank > SQ_PCT:
+            continue
+        med = float(np.median(v[i - SQ_VOL_BARS:i]))
+        rng = h[i] - l[i]
+        if med <= 0 or rng <= 0 or v[i] < SQ_VOL_MULT * med:
+            continue
+        d = 1 if c[i] > up[i - 1] else -1 if c[i] < lo[i - 1] else 0
+        if d == 0 or (c[i] - o[i]) * d / rng < SQ_BODY_FRAC:
+            continue
+        moved = (c[-1] / o[i] - 1) * 100 * d
+        if moved > SQ_MAX_MOVED_PCT:
+            continue
+        above = int(c[i] > m50[i]) + int(c[i] > m200[i])
+        trend = "mixed" if above == 1 else ("with" if (above == 2) == (d == 1) else "against")
+        return {"dir": d, "age": age, "vol_x": float(v[i] / med), "squeeze_pct": rank * 100,
+                "beyond_pct": float((c[i] / (up[i - 1] if d == 1 else lo[i - 1]) - 1) * 100 * d), "moved_pct": float(moved), "trend": trend}
+    return None

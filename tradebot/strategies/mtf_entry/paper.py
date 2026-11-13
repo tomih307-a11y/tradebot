@@ -207,9 +207,9 @@ def breakout_scan(client, top: int = 1000, min_turnover: float = 300_000) -> lis
     for t in tick[:top]:
         sym = t["symbol"]
         try:
-            k = drop_unclosed(fetch_range(client, sym, "Min15", int(now // 900 * 900) - 130 * 900, now), "Min15", now)
+            k = drop_unclosed(fetch_range(client, sym, "Min15", int(now // 900 * 900) - 330 * 900, now), "Min15", now)
             a = lambda f: np.asarray(k[f], float)
-            su = M.breakout(a("open"), a("high"), a("low"), a("close"), a("vol"))
+            su = M.squeeze_breakout(a("open"), a("high"), a("low"), a("close"), a("vol"))
         except Exception as e:
             log.warning("%s: %s", sym, e)
             continue
@@ -237,27 +237,23 @@ if __name__ == "__main__":
         hhmm = lambda x: time.strftime("%m-%d %H:%M", time.gmtime(int(x)))
         print(f"{sym}: {len(cl)} شمعة 15د من {hhmm(tt[0])} إلى {hhmm(tt[-1])} (UTC) · السعر الآن {cl[-1]:.6g}")
         first = {}
-        for i in range(M.BO_LOOKBACK + 3, len(cl)):
-            r = M.breakout(o[:i + 1], h[:i + 1], l[:i + 1], cl[:i + 1], v[:i + 1])
-            if r and r["age"] == 0 and (r["dir"], round(r["range_hi"], 12)) not in first:
-                first[(r["dir"], round(r["range_hi"], 12))] = i
-                print(f"🔔 إشارة {'صعود' if r['dir'] == 1 else 'هبوط'} عند {hhmm(tt[i])} UTC · سعر {cl[i]:.6g} · حجم ×{r['vol_x']:.1f} · "
+        last_i = -99
+        for i in range(215, len(cl)):
+            r = M.squeeze_breakout(o[:i + 1], h[:i + 1], l[:i + 1], cl[:i + 1], v[:i + 1])
+            if r and r["age"] == 0 and i - last_i > 8:
+                last_i = i
+                first[i] = i
+                print(f"🔔 إشارة {'صعود' if r['dir'] == 1 else 'هبوط'} عند {hhmm(tt[i])} UTC · سعر {cl[i]:.6g} · حجم ×{r['vol_x']:.1f} · {r['trend']} · ضغط {r['squeeze_pct']:.0f}% · "
                       f"بعدها وصل أقصى {h[i:].max():.6g} ({(h[i:].max() / cl[i] - 1) * 100:+.1f}%) وأدنى {l[i:].min():.6g} ({(l[i:].min() / cl[i] - 1) * 100:+.1f}%) والآن {(cl[-1] / cl[i] - 1) * 100:+.1f}%")
         if not first:
-            print("لم تنطلق أي إشارة خلال الفترة. أكبر 6 شموع صعوداً/هبوطاً وسبب عدم الإطلاق:")
-            ret = (cl - o) / o * 100
-            for i in np.argsort(-np.abs(ret[M.BO_LOOKBACK + 3:]))[:6] + M.BO_LOOKBACK + 3:
-                lo_, hi_ = l[i - M.BO_LOOKBACK:i].min(), h[i - M.BO_LOOKBACK:i].max()
-                med = np.median(v[i - M.BO_LOOKBACK:i])
-                rg = h[i] - l[i]
-                print(f"{hhmm(tt[i])} UTC شمعة {ret[i]:+.1f}% · عرض النطاق السابق {(hi_ - lo_) / lo_ * 100:.1f}% (الحد {M.BO_MAX_WIDTH_PCT:.0f}%) · حجم ×{v[i] / med:.1f} (الحد {M.BO_VOL_MULT:.0f}) · "
-                      f"جسم {(abs(cl[i] - o[i]) / rg if rg else 0):.2f} (الحد {M.BO_BODY_FRAC}) · كسر النطاق: {'نعم' if cl[i] > hi_ or cl[i] < lo_ else 'لا'}")
+            print("لم تنطلق أي إشارة خلال الفترة")
     elif len(sys.argv) >= 2 and sys.argv[1] == "boom":
         rows = breakout_scan(c)
-        print(f"انفجارات مبكرة (كسر نطاق هادئ 24س على حجم ≥ {M.BO_VOL_MULT:.0f}× المعتاد): {len(rows)}")
-        for r in sorted(rows, key=lambda r: (r["age"], -r["vol_x"])):
-            print(f"{'صعود' if r['dir'] == 1 else 'هبوط'} {r['symbol']:<14} حجم ×{r['vol_x']:.1f} · كسر {r['beyond_pct']:.1f}% خارج النطاق ({r['range_lo']:.6g}-{r['range_hi']:.6g}) · "
-                  f"تحرك منذ الكسر {r['moved_pct']:+.1f}% · عمر الإشارة {r['age'] * 15 + 15} دقيقة · سعر {r['price']:.6g} · 24س {r['chg24']:+.1f}%")
+        tr = {"with": "مع الاتجاه (فوق/تحت المتوسطين 50 و200)", "against": "ضد الاتجاه", "mixed": "بين المتوسطين"}
+        print(f"انفجارات مبكرة (ضغط بولنجر ثم كسر على حجم ≥ {M.SQ_VOL_MULT:.0f}× المعتاد): {len(rows)}")
+        for r in sorted(rows, key=lambda r: (r["trend"] != "with", r["age"], -r["vol_x"])):
+            print(f"{'صعود' if r['dir'] == 1 else 'هبوط'} {r['symbol']:<14} {tr[r['trend']]} · حجم ×{r['vol_x']:.1f} · ضغط (أضيق {r['squeeze_pct']:.0f}% من تاريخها) · "
+                  f"كسر {r['beyond_pct']:.1f}% خارج الحزام · تحرك منذ الكسر {r['moved_pct']:+.1f}% · عمر الإشارة {r['age'] * 15 + 15} دقيقة · سعر {r['price']:.6g} · 24س {r['chg24']:+.1f}%")
     elif len(sys.argv) == 5 and sys.argv[1] == "trail":
         sym, side_, entry = sys.argv[2], sys.argv[3], float(sys.argv[4])
         d, now = (1 if side_ == "long" else -1), int(time.time())

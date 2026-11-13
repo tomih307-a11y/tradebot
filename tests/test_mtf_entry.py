@@ -69,3 +69,34 @@ def test_breakout_needs_volume_range_and_not_late():
     o[-1], c[-1], h[-1], l[-1], v[-1] = 100.0, 102.0, 102.1, 99.95, 6000.0
     h[:60] += 20.0                                                               # range far too wide to be "quiet"
     assert M.breakout(o, h, l, c, v) is None
+
+
+def _squeezed(n=300, sign=1):
+    rng = np.random.default_rng(3)
+    sd = np.r_[np.full(n - 30, 1.0), np.full(30, 0.02)]
+    c = 100 + rng.normal(0, 1, n) * sd
+    o = np.r_[c[0], c[:-1]]
+    h, l, v = np.maximum(o, c) + 0.02, np.minimum(o, c) - 0.02, np.full(n, 1000.0)
+    o[-1], c[-1] = 100.0, 100.0 + 2.0 * sign
+    h[-1], l[-1], v[-1] = max(o[-1], c[-1]) + 0.05, min(o[-1], c[-1]) - 0.05, 5000.0
+    return o, h, l, c, v
+
+
+def test_squeeze_breakout_both_sides_and_filters():
+    r = M.squeeze_breakout(*_squeezed(sign=1))
+    assert r and r["dir"] == 1 and r["age"] == 0 and r["squeeze_pct"] <= 20 and r["vol_x"] >= 3
+    assert M.squeeze_breakout(*_squeezed(sign=-1))["dir"] == -1
+    o, h, l, c, v = _squeezed()
+    v[-1] = 1500.0                                              # no volume spike -> no signal
+    assert M.squeeze_breakout(o, h, l, c, v) is None
+    o, h, l, c, v = _squeezed()
+    assert M.squeeze_breakout(o[:100], h[:100], l[:100], c[:100], v[:100]) is None   # too little history
+
+
+def test_squeeze_not_triggered_when_range_was_not_narrow():
+    rng = np.random.default_rng(4)
+    n = 300
+    c = 100 + rng.normal(0, 1, n); o = np.r_[c[0], c[:-1]]
+    h, l, v = np.maximum(o, c) + 0.02, np.minimum(o, c) - 0.02, np.full(n, 1000.0)
+    o[-1], c[-1], h[-1], l[-1], v[-1] = 100.0, 106.0, 106.1, 99.95, 6000.0
+    assert M.squeeze_breakout(o, h, l, c, v) is None
