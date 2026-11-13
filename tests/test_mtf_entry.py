@@ -43,3 +43,29 @@ def test_turn_state_imminent_and_crossed():
     assert M.turn_state(np.array([-1.0, -0.5, -0.2, 0.1, 0.4, 0.8]), 1) is None   # crossed 3 bars ago: late
     assert M.turn_state(np.array([-1.0, -0.5, -0.2, -0.1, 0.1, 0.4]), 1) == ("crossed", 1)
     assert M.turn_state(-g, -1)[0] == "imminent"
+
+
+def _flat(n=120, price=100.0):
+    rng = np.random.default_rng(0)
+    c = price + rng.normal(0, 0.1, n); o = np.r_[c[0], c[:-1]]
+    return o, c + 0.15, c - 0.15, c, np.full(n, 1000.0)
+
+
+def test_breakout_up_and_down_with_volume():
+    o, h, l, c, v = _flat()
+    o[-1], c[-1], h[-1], l[-1], v[-1] = 100.0, 102.0, 102.1, 99.95, 6000.0     # strong up break on 6x volume
+    r = M.breakout(o, h, l, c, v)
+    assert r and r["dir"] == 1 and r["age"] == 0 and r["vol_x"] >= 4
+    o, h, l, c, v = _flat()
+    o[-1], c[-1], h[-1], l[-1], v[-1] = 100.0, 98.0, 100.05, 97.9, 6000.0
+    assert M.breakout(o, h, l, c, v)["dir"] == -1
+
+
+def test_breakout_needs_volume_range_and_not_late():
+    o, h, l, c, v = _flat()
+    o[-1], c[-1], h[-1], l[-1], v[-1] = 100.0, 102.0, 102.1, 99.95, 1500.0     # no volume spike
+    assert M.breakout(o, h, l, c, v) is None
+    o, h, l, c, v = _flat()
+    o[-1], c[-1], h[-1], l[-1], v[-1] = 100.0, 102.0, 102.1, 99.95, 6000.0
+    h[:60] += 20.0                                                               # range far too wide to be "quiet"
+    assert M.breakout(o, h, l, c, v) is None

@@ -113,3 +113,38 @@ def early_setup(states: dict, h1, l1, c1, gap15, price: float):
     if turn is None:
         return None
     return {"dir": d, "zone": zone, "turn": turn, "ext_atr": ext, "away_atr": gap_to / atr}
+
+
+# ───────── breakout alert: a quiet range broken on a volume spike, in EITHER direction (parameters are untested guesses) ─────────
+BO_LOOKBACK, BO_VOL_MULT, BO_MAX_WIDTH_PCT, BO_BODY_FRAC, BO_MAX_MOVED_PCT = 96, 4.0, 10.0, 0.6, 15.0
+
+
+def breakout(o, h, l, c, v, lookback: int = BO_LOOKBACK):
+    """Look at the last two CLOSED bars. A break = close beyond the high/low of the previous `lookback` bars (a quiet range no wider than
+    BO_MAX_WIDTH_PCT), on volume >= BO_VOL_MULT x the median volume of that range, with a strong candle body. Direction = the side that broke.
+    Returns dict(dir, age (0 = last closed bar), vol_x, beyond_pct, moved_pct, range_lo, range_hi) or None."""
+    n = len(c)
+    if n < lookback + 3:
+        return None
+    for age in (0, 1):
+        i = n - 1 - age
+        lo, hi = float(np.min(l[i - lookback:i])), float(np.max(h[i - lookback:i]))
+        med = float(np.median(v[i - lookback:i]))
+        if lo <= 0 or med <= 0 or (hi - lo) / lo * 100 > BO_MAX_WIDTH_PCT:
+            continue
+        rng = h[i] - l[i]
+        if rng <= 0 or v[i] < BO_VOL_MULT * med:
+            continue
+        up, dn = c[i] > hi, c[i] < lo
+        if not (up or dn):
+            continue
+        d = 1 if up else -1
+        body = (c[i] - o[i]) * d / rng
+        if body < BO_BODY_FRAC:
+            continue
+        moved = (c[-1] / o[i] - 1) * 100 * d
+        if moved > BO_MAX_MOVED_PCT:
+            continue
+        return {"dir": d, "age": age, "vol_x": float(v[i] / med), "beyond_pct": float((c[i] / (hi if up else lo) - 1) * 100 * d),
+                "moved_pct": float(moved), "range_lo": lo, "range_hi": hi}
+    return None

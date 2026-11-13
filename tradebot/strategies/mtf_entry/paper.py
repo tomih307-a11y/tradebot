@@ -197,6 +197,27 @@ def top_movers(client, n: int = 50, min_turnover: float = 1_000_000) -> list[dic
     return out
 
 
+def breakout_scan(client, top: int = 1000, min_turnover: float = 300_000) -> list[dict]:
+    """Read-only: crypto futures whose last 1-2 closed 15m bars broke a quiet 24h range on a volume spike (either direction)."""
+    now = int(time.time())
+    tick = [t for t in client.tickers() if str(t.get("symbol", "")).endswith("_USDT")
+            and not t["symbol"].endswith("STOCK_USDT") and t["symbol"] not in NON_CRYPTO and float(t.get("amount24") or 0) >= min_turnover]
+    tick.sort(key=lambda t: -float(t.get("amount24") or 0))
+    out = []
+    for t in tick[:top]:
+        sym = t["symbol"]
+        try:
+            k = drop_unclosed(fetch_range(client, sym, "Min15", int(now // 900 * 900) - 130 * 900, now), "Min15", now)
+            a = lambda f: np.asarray(k[f], float)
+            su = M.breakout(a("open"), a("high"), a("low"), a("close"), a("vol"))
+        except Exception as e:
+            log.warning("%s: %s", sym, e)
+            continue
+        if su:
+            out.append({"symbol": sym, "price": float(t["lastPrice"]), "chg24": float(t["riseFallRate"]) * 100, **su})
+    return out
+
+
 def status(client) -> None:
     st = load()
     px = {t["symbol"]: float(t["lastPrice"]) for t in client.tickers()}
@@ -209,7 +230,13 @@ def status(client) -> None:
 
 if __name__ == "__main__":
     c = MexcClient(__import__("tradebot.config", fromlist=["load_config"]).load_config("config.toml").mexc)
-    if len(sys.argv) == 5 and sys.argv[1] == "trail":
+    if len(sys.argv) >= 2 and sys.argv[1] == "boom":
+        rows = breakout_scan(c)
+        print(f"انفجارات مبكرة (كسر نطاق هادئ 24س على حجم ≥ {M.BO_VOL_MULT:.0f}× المعتاد): {len(rows)}")
+        for r in sorted(rows, key=lambda r: (r["age"], -r["vol_x"])):
+            print(f"{'صعود' if r['dir'] == 1 else 'هبوط'} {r['symbol']:<14} حجم ×{r['vol_x']:.1f} · كسر {r['beyond_pct']:.1f}% خارج النطاق ({r['range_lo']:.6g}-{r['range_hi']:.6g}) · "
+                  f"تحرك منذ الكسر {r['moved_pct']:+.1f}% · عمر الإشارة {r['age'] * 15 + 15} دقيقة · سعر {r['price']:.6g} · 24س {r['chg24']:+.1f}%")
+    elif len(sys.argv) == 5 and sys.argv[1] == "trail":
         sym, side_, entry = sys.argv[2], sys.argv[3], float(sys.argv[4])
         d, now = (1 if side_ == "long" else -1), int(time.time())
         k = fetch(c, sym, M.ZONE_TF, now)
