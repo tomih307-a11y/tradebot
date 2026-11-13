@@ -123,3 +123,20 @@ def test_event_merge_flags_and_label_no_lookahead():
     assert B.flags(ev_idx, 499, bw)["R3"] is False and B.flags(ev_idx, 520, bw)["R3"] is True       # event unknown before it starts
     assert B.label_and_lead(ev, 450)[0] is True and B.label_and_lead(ev, 450)[1] == 50
     assert B.label_and_lead(ev, 520)[0] is False
+
+
+def test_early_signs_features_no_lookahead_and_labels():
+    from tradebot.strategies.mtf_entry import early_signs as E
+    n = 1500
+    rng = np.random.default_rng(7)
+    c = 100 + np.cumsum(rng.normal(0, 0.05, n)); o = np.r_[c[0], c[:-1]]
+    h, l, v = np.maximum(o, c) + 0.02, np.minimum(o, c) - 0.02, np.full(n, 1000.0)
+    t = 1_700_000_000 + 900 * np.arange(n)
+    c[1200] = c[1199] * 1.15; o[1200] = c[1199]; h[1200] = c[1200] + 0.02; v[1200] = 9000.0     # explosive candle at 1200
+    ft, fr = np.array([t[0] - 10.0]), np.array([-0.0002])
+    basis = np.full(n, -0.002)
+    f, fmax, valid = E.features(o, h, l, c, v, t, ft, fr, basis)
+    assert not f["F3"][1199] and f["F3"][1200]                       # volume spike only AT the candle
+    assert not f["F1"][1199] and f["F1"][1200] and f["F1"][1200 + 191] and not f["F1"][1200 + 192]   # recurrence flag lasts 48h exactly
+    assert f["F6"][900] and f["F7"][900] and fmax[1199] > 14.9        # label sees the +15% next candle
+    assert np.isnan(fmax[-1]) and valid[1100]

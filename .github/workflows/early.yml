@@ -1,0 +1,36 @@
+name: early-signs
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-early.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Tests
+        run: python -m pytest tests/test_mtf_entry.py -q
+      - name: Early signs study (rules: docs/EARLY_SIGNS.md)
+        run: |
+          mkdir -p reports/early
+          python -m tradebot.strategies.mtf_entry.early_signs 90 reports/early/early_signs.txt 2>&1 | tail -40
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/early/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b early-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "early signs" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin early-results
