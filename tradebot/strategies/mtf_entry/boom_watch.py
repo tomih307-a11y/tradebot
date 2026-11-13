@@ -248,3 +248,21 @@ if __name__ == "__main__" and len(sys.argv) >= 2 and sys.argv[1] == "pick":
     from tradebot.config import load_config
     from tradebot.mexc.client import MexcClient
     print(pick_text(MexcClient(load_config("config.toml").mexc)))
+
+
+if __name__ == "__main__" and len(sys.argv) == 3 and sys.argv[1] == "coin":
+    from tradebot.config import load_config
+    from tradebot.data.klines import drop_unclosed, fetch_range
+    from tradebot.mexc.client import MexcClient
+
+    cl, sym, now = MexcClient(load_config("config.toml").mexc), sys.argv[2], int(time.time())
+    k = drop_unclosed(fetch_range(cl, sym, "Min15", int(now // 900 * 900) - 90 * 96 * 900, now), "Min15", now)
+    o, h, l, c = (np.asarray(k[f], float) for f in ("open", "high", "low", "close"))
+    ev = event_starts(o, c)
+    ret = (c / o - 1) * 100
+    up24 = np.array([(h[i + 1:i + 97].max() / c[i] - 1) * 100 for i in range(0, len(c) - 97, 4)])
+    dn24 = np.array([(1 - l[i + 1:i + 97].min() / c[i]) * 100 for i in range(0, len(c) - 97, 4)])
+    print(f"{sym}: {len(c)} شمعة 15د (~{len(c) / 96:.0f} يوماً)")
+    print(f"شموع 15د ≥10%: {int((np.abs(ret) >= 10).sum())} · أحداث انفجار مدموجة: {len(ev)} · أكبر شمعة 15د: {ret[np.argmax(np.abs(ret))]:+.1f}%")
+    print(f"أعلى صعود خلال 24س من أي نقطة: وسيط {np.median(up24):.1f}% · 90% من الحالات أقل من {np.percentile(up24, 90):.1f}% · الأقصى {up24.max():.1f}%")
+    print(f"احتمال صعود ≥10% خلال 24س: {np.mean(up24 >= 10) * 100:.1f}% · ≥5%: {np.mean(up24 >= 5) * 100:.1f}% · هبوط ≥10%: {np.mean(dn24 >= 10) * 100:.1f}%")
