@@ -144,6 +144,11 @@ def study(days=90, out=None):
             if r[best]:
                 syms[r["sym"]] = syms.get(r["sym"], 0) + 1
         lines.append("أكثر العقود تعليماً في التحقق: " + "، ".join(f"{s} ({n})" for s, n in sorted(syms.items(), key=lambda x: -x[1])[:10]))
+    pos_all = [r for r in hold if r["label"]]
+    if pos_all:
+        rec = np.mean([r["R3"] for r in pos_all])
+        lines.append(f"الاستدعاء (ملحق أ، R3): من نقاط التحقق التي تبعها انفجار خلال 24س ({len(pos_all)})، سبقها تعليم R3 في {rec * 100:.0f}% منها، "
+                     f"أي أن {100 - rec * 100:.0f}% من الانفجارات جاءت من عقود لم تنفجر خلال 48 ساعة قبلها.")
     lines += ["", "تحيّز معروف: العقود المؤهلة هي السائلة اليوم، والانفجار يرفع السيولة، فقد يميل الاختيار لصالح القواعد."]
     text = "\n".join(lines)
     print(text)
@@ -154,3 +159,60 @@ def study(days=90, out=None):
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "study":
         study(int(sys.argv[2]) if len(sys.argv) > 2 else 90, sys.argv[3] if len(sys.argv) > 3 else None)
+
+
+# ───────── live watchlist ─────────
+def watch_snapshot(client, days: int = 14):
+    """Liquid crypto contracts with their recent explosion history (15m candles, last `days`), newest explosion first."""
+    from tradebot.data.klines import drop_unclosed, fetch_range
+
+    from .paper import NON_CRYPTO
+
+    now = int(time.time())
+    tick = [t for t in client.tickers() if str(t.get("symbol", "")).endswith("_USDT") and not t["symbol"].endswith("STOCK_USDT")
+            and t["symbol"] not in NON_CRYPTO and float(t.get("amount24") or 0) >= 300_000]
+    out = []
+    for tk in tick:
+        sym = tk["symbol"]
+        try:
+            k = drop_unclosed(fetch_range(client, sym, "Min15", int(now // 900 * 900) - days * 96 * 900, now), "Min15", now)
+            o, h, l, c, v, tt = (np.asarray(k[f], float) for f in ("open", "high", "low", "close", "vol", "time"))
+        except Exception:
+            continue
+        if len(c) < 400:
+            continue
+        ev = event_starts(o, c)
+        if not ev:
+            continue
+        j, d = ev[-1]
+        t = len(c) - 1
+        pre = M.squeeze_precompute(o, h, l, c, v)
+        hrs = (t - j) * 15 / 60
+        n7 = sum(1 for e, _ in ev if e > t - D7)
+        out.append({"sym": sym, "last_h": hrs, "last_dir": d, "last_pct": float((c[j] / o[j] - 1) * 100), "n7": n7, "n14": len(ev),
+                    "since_pct": float((c[t] / o[j] - 1) * 100), "price": float(c[t]), "sq": squeeze_rank(np.asarray(pre["bw"]), t),
+                    "vol_x": float(v[-4:].mean() / max(np.median(v[-96:]), 1e-12)), "watch": hrs <= 48})
+    return sorted(out, key=lambda r: r["last_h"])
+
+
+def watch_text(rows) -> str:
+    w = [r for r in rows if r["watch"]]
+    lines = [f"قائمة المراقبة (انفجر خلال آخر 48 ساعة) — {len(w)} عملة. في الدراسة المسجّلة: بعد التعليم انفجر 39.5% منها خلال 24س مقابل 2.8% للعقود عموماً (وسيط المهلة 10س).",
+             "الجهة القادمة غير مضمونة: لم تطابق جهة آخر انفجار إلا في 41% (أي الأرجح العكس بنحو 59%).", ""]
+    for r in w:
+        lines.append(f"{r['sym']:<14} آخر انفجار قبل {r['last_h']:.1f}س ({'صعود' if r['last_dir'] == 1 else 'هبوط'} {r['last_pct']:+.1f}%) · منذها {r['since_pct']:+.1f}% · "
+                     f"انفجارات 7أيام: {r['n7']} · 14يوماً: {r['n14']} · ضغط {r['sq'] * 100:.0f}% · حجم آخر ساعة ×{r['vol_x']:.1f} · سعر {r['price']:.6g}")
+    rec = sorted((r for r in rows if r["n14"] >= 3 and not r["watch"]), key=lambda r: -r["n14"])
+    lines += ["", f"متكررة لكنها هادئة الآن (≥3 انفجارات في 14 يوماً ولا انفجار خلال 48س) — {len(rec)}:"]
+    for r in rec:
+        lines.append(f"{r['sym']:<14} آخر انفجار قبل {r['last_h']:.0f}س · انفجارات 14يوماً: {r['n14']} · ضغط {r['sq'] * 100:.0f}% · سعر {r['price']:.6g}")
+    return "\n".join(lines)
+
+
+if __name__ == "__main__" and len(sys.argv) >= 2 and sys.argv[1] == "watch":
+    from tradebot.config import load_config
+    from tradebot.mexc.client import MexcClient
+    txt = watch_text(watch_snapshot(MexcClient(load_config("config.toml").mexc)))
+    print(txt)
+    if len(sys.argv) > 2:
+        open(sys.argv[2], "w", encoding="utf-8").write(txt)
