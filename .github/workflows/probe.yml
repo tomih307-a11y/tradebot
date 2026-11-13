@@ -22,10 +22,15 @@ jobs:
         run: |
           mkdir -p reports/probe
           {
-            echo "=== tardis exchange coverage mexc-futures ==="
-            curl -sS -m 30 https://api.tardis.dev/v1/exchanges/mexc-futures | head -c 6000
-            echo; echo "=== tardis pricing page (text) ==="
-            curl -sS -m 30 -L https://tardis.dev/pricing | python3 -c "import sys,re,html; t=sys.stdin.read(); t=re.sub(r'<script.*?</script>|<style.*?</style>','',t,flags=re.S); t=re.sub(r'<[^>]+>',' ',t); t=html.unescape(re.sub(r'\s+',' ',t)); print(t[:6000])"
+            for u in faq/billing-and-subscriptions.md faq/general.md faq/data.md api/rate-limits.md; do
+              echo "=== docs.tardis.dev/$u ==="
+              curl -sS -m 30 -L "https://docs.tardis.dev/$u" | head -c 7000
+              echo
+            done
+            echo "=== tardis.dev pricing (links) ==="
+            curl -sS -m 30 -L https://tardis.dev/pricing | grep -oiE '\$ ?[0-9][0-9,]*(\.[0-9]+)?[^<"]{0,60}|(free|trial|academic|solo|pro|business|per month|/month)[^<"]{0,60}' | sort -u | head -80
+            echo "=== tardis.dev main ==="
+            curl -sS -m 30 -L https://tardis.dev/ | grep -oiE '\$ ?[0-9][0-9,]*[^<"]{0,60}' | sort -u | head -30
           } 2>&1 | tee reports/probe/tardis.txt
       - name: Publish
         if: always()
