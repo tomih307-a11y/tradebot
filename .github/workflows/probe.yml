@@ -21,7 +21,12 @@ jobs:
       - name: Probe
         run: |
           mkdir -p reports/probe
-          python tools/mexc_probe.py 2>&1 | tee reports/probe/probe.txt
+          {
+            echo "=== tardis exchange coverage mexc-futures ==="
+            curl -sS -m 30 https://api.tardis.dev/v1/exchanges/mexc-futures | head -c 6000
+            echo; echo "=== tardis pricing page (text) ==="
+            curl -sS -m 30 -L https://tardis.dev/pricing | python3 -c "import sys,re,html; t=sys.stdin.read(); t=re.sub(r'<script.*?</script>|<style.*?</style>','',t,flags=re.S); t=re.sub(r'<[^>]+>',' ',t); t=html.unescape(re.sub(r'\s+',' ',t)); print(t[:6000])"
+          } 2>&1 | tee reports/probe/tardis.txt
       - name: Publish
         if: always()
         run: |
