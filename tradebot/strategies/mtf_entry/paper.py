@@ -218,6 +218,35 @@ def breakout_scan(client, top: int = 1000, min_turnover: float = 300_000) -> lis
     return out
 
 
+def long_candidates(client, min_turnover: float = 1_000_000) -> list[dict]:
+    """Liquid crypto futures with an overall LONG direction (daily and 4H not bearish, weighted score >= 0.5) and momentum (1H, 30m, 15m all up),
+    ranked by how little the move has already extended."""
+    now = int(time.time())
+    tick = [t for t in client.tickers() if str(t.get("symbol", "")).endswith("_USDT") and not t["symbol"].endswith("STOCK_USDT")
+            and t["symbol"] not in NON_CRYPTO and float(t.get("amount24") or 0) >= min_turnover]
+    out = []
+    for t in tick:
+        sym = t["symbol"]
+        try:
+            ks = {tf: fetch(client, sym, tf, now) for tf, _ in M.FRAMES}
+            states = {tf: M.tf_state(np.asarray(k["close"], float)) for tf, k in ks.items()}
+            d, score = M.direction(states)
+            if d != 1 or states["Day1"] < 0 or states["Hour4"] < 0 or min(states["Min60"], states["Min30"], states["Min15"]) < 1:
+                continue
+            h1 = {f: np.asarray(ks["Min60"][f], float) for f in ("high", "low", "close")}
+            atr = M.last_atr(h1["high"], h1["low"], h1["close"])
+            ef = float(M.ema(h1["close"], M.EMA_FAST)[-1])
+            price = float(t["lastPrice"])
+            zone = M.entry_zone(h1["high"], h1["low"], h1["close"], 1)
+            dk = ks["Day1"]
+            out.append({"symbol": sym, "price": price, "score": score, "ext": (price - ef) / atr, "atr_pct": atr / price * 100, "zone": zone,
+                        "chg24": float(t["riseFallRate"]) * 100, "daily_pct": float((dk["close"][-1] / dk["open"][-1] - 1) * 100),
+                        "turn_m": float(t["amount24"]) / 1e6, "states": states})
+        except Exception as e:
+            log.warning("%s: %s", sym, e)
+    return sorted(out, key=lambda r: (r["ext"] > 1.0, abs(r["ext"] - 0.3), r["atr_pct"]))
+
+
 def status(client) -> None:
     st = load()
     px = {t["symbol"]: float(t["lastPrice"]) for t in client.tickers()}
