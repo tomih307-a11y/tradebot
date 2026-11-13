@@ -205,3 +205,37 @@ def squeeze_breakout(o, h, l, c, v):
         return {"dir": d, "age": age, "vol_x": float(v[i] / med), "squeeze_pct": rank * 100,
                 "beyond_pct": float((c[i] / (up[i - 1] if d == 1 else lo[i - 1]) - 1) * 100 * d), "moved_pct": float(moved), "trend": trend}
     return None
+
+
+def squeeze_precompute(o, h, l, c, v):
+    """Vectorised indicators for scanning every bar of a history (same definitions as squeeze_breakout)."""
+    from numpy.lib.stride_tricks import sliding_window_view as swv
+    n = len(c)
+    mid = _sma(c, SQ_BB_LEN)
+    sd = np.full(n, np.nan)
+    if n >= SQ_BB_LEN:
+        sd[SQ_BB_LEN - 1:] = swv(c, SQ_BB_LEN).std(axis=1)
+    up, lo = mid + SQ_BB_K * sd, mid - SQ_BB_K * sd
+    return {"up": up, "lo": lo, "bw": (up - lo) / mid, "m50": _sma(c, 50), "m200": _sma(c, 200)}
+
+
+def squeeze_at(pre, o, h, l, c, v, i):
+    """Signal on closed bar i (age 0), or None. Mirrors squeeze_breakout without the 'already moved' filter (moved = 0 at the signal bar)."""
+    if i < 215:
+        return None
+    hist = pre["bw"][i - SQ_HIST:i]
+    if np.isnan(hist).any() or np.isnan(pre["m200"][i]) or np.isnan(pre["bw"][i - 1]):
+        return None
+    rank = float((hist < pre["bw"][i - 1]).mean())
+    if rank > SQ_PCT:
+        return None
+    med = float(np.median(v[i - SQ_VOL_BARS:i]))
+    rng = h[i] - l[i]
+    if med <= 0 or rng <= 0 or v[i] < SQ_VOL_MULT * med:
+        return None
+    d = 1 if c[i] > pre["up"][i - 1] else -1 if c[i] < pre["lo"][i - 1] else 0
+    if d == 0 or (c[i] - o[i]) * d / rng < SQ_BODY_FRAC:
+        return None
+    above = int(c[i] > pre["m50"][i]) + int(c[i] > pre["m200"][i])
+    trend = "mixed" if above == 1 else ("with" if (above == 2) == (d == 1) else "against")
+    return {"dir": d, "vol_x": float(v[i] / med), "squeeze_pct": rank * 100, "trend": trend}

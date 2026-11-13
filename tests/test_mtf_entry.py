@@ -100,3 +100,11 @@ def test_squeeze_not_triggered_when_range_was_not_narrow():
     h, l, v = np.maximum(o, c) + 0.02, np.minimum(o, c) - 0.02, np.full(n, 1000.0)
     o[-1], c[-1], h[-1], l[-1], v[-1] = 100.0, 106.0, 106.1, 99.95, 6000.0
     assert M.squeeze_breakout(o, h, l, c, v) is None
+
+
+def test_precomputed_squeeze_matches_single_call():
+    o, h, l, c, v = _squeezed()
+    pre = M.squeeze_precompute(o, h, l, c, v)
+    s = M.squeeze_at(pre, o, h, l, c, v, len(c) - 1)
+    r = M.squeeze_breakout(o, h, l, c, v)
+    assert s and r and s["dir"] == r["dir"] and s["trend"] == r["trend"] and abs(s["vol_x"] - r["vol_x"]) < 1e-9
