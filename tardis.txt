@@ -1,0 +1,149 @@
+> For the complete documentation index, see [llms.txt](https://docs.tardis.dev/llms.txt). Markdown versions of documentation pages are available by appending `.md` to page URLs; this page is available as [Markdown](https://docs.tardis.dev/historical-data-details/mexc-futures.md).
+
+# MEXC Futures
+
+MEXC Futures historical market data details - available instruments, data coverage and data collection specifics
+
+MEXC Futures historical data for **all its instruments** is available since **2026-06-25**.
+
+{% embed url="<https://api.tardis.dev/v1/exchanges/mexc-futures>" %}
+See MEXC Futures historical data coverage: available symbols, channels, date ranges and incidents
+{% endembed %}
+
+### Downloadable **CSV** files
+
+Historical CSV datasets for the first day of each month are **available to download without a Data API key**. See [downloadable CSV files documentation](/downloadable-csv-files/overview.md).
+
+| data type             | symbol    | date       |                                                                                                               |
+| --------------------- | --------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| incremental\_book\_L2 | BTC\_USDT | 2026-07-01 | [Download sample](https://datasets.tardis.dev/v1/mexc-futures/incremental_book_L2/2026/07/01/BTC_USDT.csv.gz) |
+| trades                | BTC\_USDT | 2026-07-01 | [Download sample](https://datasets.tardis.dev/v1/mexc-futures/trades/2026/07/01/BTC_USDT.csv.gz)              |
+| derivative\_ticker    | BTC\_USDT | 2026-07-01 | [Download sample](https://datasets.tardis.dev/v1/mexc-futures/derivative_ticker/2026/07/01/BTC_USDT.csv.gz)   |
+
+### API Access and data format
+
+Historical data format is the same as provided by real-time MEXC Futures WebSocket API with addition of local timestamps. If you'd like to work with **normalized data format** instead (same format for each exchange) see [downloadable CSV files](/downloadable-csv-files/overview.md) or official [client libs](/api/quickstart.md) that can perform data normalization client-side.
+
+{% tabs %}
+{% tab title="Python" %}
+
+```python
+# pip install tardis-dev
+import asyncio
+from tardis_dev import Channel, replay
+
+async def main():
+    async for local_timestamp, message in replay(
+        exchange="mexc-futures",
+        from_date="2026-07-01",
+        to_date="2026-07-02",
+        filters=[Channel(name="push.depth", symbols=["BTC_USDT"])],
+        api_key="YOUR_API_KEY",
+    ):
+        # messages as provided by MEXC Futures real-time stream
+        print(message)
+
+asyncio.run(main())
+```
+
+See [Python client docs](/python-client/quickstart.md).
+{% endtab %}
+
+{% tab title="Node.js" %}
+
+```javascript
+// npm install tardis-dev
+import { replay } from 'tardis-dev';
+
+const messages = replay({
+  exchange: 'mexc-futures',
+  from: '2026-07-01',
+  to: '2026-07-02',
+  filters: [{ channel: 'push.depth', symbols: ['BTC_USDT'] }],
+  apiKey: 'YOUR_API_KEY'
+});
+
+// messages as provided by MEXC Futures real-time stream
+for await (const { localTimestamp, message } of messages) {
+  console.log(localTimestamp, message);
+}
+```
+
+See [Node.js client docs](/node-client/quickstart.md).
+{% endtab %}
+
+{% tab title="cURL & HTTP API" %}
+
+```bash
+curl --compressed -g 'https://api.tardis.dev/v1/data-feeds/mexc-futures?from=2026-07-01&filters=[{"channel":"push.depth","symbols":["BTC_USDT"]}]&offset=0'
+```
+
+{% embed url="<https://api.tardis.dev/v1/data-feeds/mexc-futures?from=2026-07-01&filters=[{%22channel%22:%22push.depth%22,%22symbols%22:[%22BTC_USDT%22]}]&offset=0>" %}
+Example API response for MEXC Futures historical market data request
+{% endembed %}
+
+See [HTTP API docs](/api/http-api-reference.md).
+{% endtab %}
+
+{% tab title="cURL & tardis-machine" %}
+
+```bash
+curl -g 'localhost:8000/replay?options={"exchange":"mexc-futures","filters":[{"channel":"push.depth","symbols":["BTC_USDT"]}],"from":"2026-07-01","to":"2026-07-02"}'
+```
+
+[Tardis-machine](/tardis-machine/quickstart.md) is a locally runnable server that exposes API allowing efficiently requesting historical market data for whole time periods in contrast to [HTTP API](/api/http-api-reference.md) that provides data only in minute by minute slices.
+
+See [tardis-machine](/tardis-machine/quickstart.md) docs.
+{% endtab %}
+{% endtabs %}
+
+### Captured real-time channels
+
+{% embed url="<https://www.mexc.com/api-docs/futures/websocket-api>" %}
+See MEXC Futures WebSocket API docs providing documentation for each captured channel's format
+{% endembed %}
+
+{% hint style="info" %}
+Click any channel below to see [HTTP API](/api/http-api-reference.md#data-feeds-exchange) response with historical data recorded for it.
+{% endhint %}
+
+* [push.deal](https://api.tardis.dev/v1/data-feeds/mexc-futures?from=2026-07-01\&filters=\[{%22channel%22:%22push.deal%22}]) Recent futures trades stream
+* [push.depth](https://api.tardis.dev/v1/data-feeds/mexc-futures?from=2026-07-01\&filters=\[{%22channel%22:%22push.depth%22,%22symbols%22:\[%22BTC_USDT%22]}]) Futures depth updates stream
+* [push.depth.snapshot](https://api.tardis.dev/v1/data-feeds/mexc-futures?from=2026-07-01\&filters=\[{%22channel%22:%22push.depth.snapshot%22,%22symbols%22:\[%22BTC_USDT%22]}]) Generated futures order book snapshots from REST API, up to 5000 levels. Snapshot messages are marked with `"generated":true`.
+* [push.ticker](https://api.tardis.dev/v1/data-feeds/mexc-futures?from=2026-07-01\&filters=\[{%22channel%22:%22push.ticker%22,%22symbols%22:\[%22BTC_USDT%22]}]) Perpetual contracts latest price, best bid/ask, and 24h volume stream
+* [push.index.price](https://api.tardis.dev/v1/data-feeds/mexc-futures?from=2026-07-01\&filters=\[{%22channel%22:%22push.index.price%22,%22symbols%22:\[%22BTC_USDT%22]}]) Perpetual contracts index price stream
+* [push.fair.price](https://api.tardis.dev/v1/data-feeds/mexc-futures?from=2026-07-01\&filters=\[{%22channel%22:%22push.fair.price%22,%22symbols%22:\[%22BTC_USDT%22]}]) Perpetual contracts fair price stream
+* [push.funding.rate](https://api.tardis.dev/v1/data-feeds/mexc-futures?from=2026-07-01\&filters=\[{%22channel%22:%22push.funding.rate%22,%22symbols%22:\[%22BTC_USDT%22]}]) Perpetual contracts funding rate updates stream
+* [push.contract](https://api.tardis.dev/v1/data-feeds/mexc-futures?from=2026-07-01\&filters=\[{%22channel%22:%22push.contract%22}]) Perpetual contracts metadata updates stream. This channel is available in raw exchange-native format only.
+
+### Market data collection details
+
+[Market data collection infrastructure](/faq/general.md#what-is-your-infrastructure-setup) for MEXC Futures is located in GCP asia-northeast1 region (Tokyo, Japan).
+
+Real-time market data is captured via **multiple WebSocket connections** to `wss://contract.mexc.com/edge`.
+
+{% hint style="info" %}
+MEXC Futures servers are located in AWS ap-northeast-1 region (Tokyo, Japan).
+{% endhint %}
+
+
+---
+
+# Agent Instructions
+This documentation is published with GitBook. GitBook is the documentation platform designed so that both humans and AI agents can read, navigate, and reason over technical content effectively. Learn more at gitbook.com.
+
+## Querying This Documentation
+If you need additional information that is not directly available in this page, you can query the documentation by asking a question.
+
+Perform an HTTP GET request on the following URL with the `ask` and `goal` query parameters:
+
+```
+GET https://docs.tardis.dev/historical-data-details/mexc-futures.md?ask=<question>&goal=<user_goal>
+```
+
+`ask` is the immediate question: it should be specific, self-contained, and written in natural language.
+`goal` is what the user is ultimately trying to achieve, the reason they need the answer. Sharing it helps GitBook give you a better, more relevant answer. A goal is most helpful when it describes the outcome the user wants rather than restating the question. For example, with `ask=how do I create an API token`, a goal like `automate deployments from our CI pipeline` lets GitBook tailor the answer to that use case.
+
+The response will contain a direct answer to the question and relevant excerpts and sources from the documentation.
+
+Use this mechanism when the answer is not explicitly present in the current page, you need clarification or additional context, or you want to retrieve related documentation sections.
