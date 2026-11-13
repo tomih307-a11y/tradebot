@@ -22,15 +22,14 @@ jobs:
         run: |
           mkdir -p reports/probe
           {
-            curl -sS -m 30 -L https://docs.tardis.dev/downloadable-csv-files/overview.md | head -c 5000
-            echo; echo "=== free day downloads (first day of month, no key) ==="
-            for dt in trades derivative_ticker; do
-              for sym in AKE_USDT ICP_USDT; do
-                u="https://datasets.tardis.dev/v1/mexc-futures/$dt/2026/11/01/$sym.csv.gz"
-                echo "--- $u"
-                code=$(curl -sS -m 60 -L -o /tmp/f.csv.gz -w "%{http_code} %{size_download}" "$u"); echo "http/size: $code"
-                if [ "${code%% *}" = "200" ]; then zcat /tmp/f.csv.gz | head -3; echo "rows: $(zcat /tmp/f.csv.gz | wc -l)"; fi
-              done
+            B=https://contract.mexc.com/api/v1/contract
+            NOW=$(date +%s); DAY=$((NOW-14*86400)); MS=$((DAY*1000))
+            for p in "deals/ICP_USDT?limit=1000" "deals/ICP_USDT?limit=100&start_time=$MS&end_time=$((MS+3600000))" "deals/ICP_USDT?limit=100&start=$DAY&end=$((DAY+3600))" \
+                     "deals/ICP_USDT?limit=100&id=17000000000" "depth_commits/ICP_USDT/20" "kline/ICP_USDT?interval=Min1&start=$DAY&end=$((DAY+3600))" \
+                     "ticker?symbol=ICP_USDT" "funding_rate/history?symbol=ICP_USDT&page_num=1&page_size=5" "open_interest/history?symbol=ICP_USDT" "openInterest?symbol=ICP_USDT" \
+                     "kline/ICP_USDT?interval=Min15&start=$((NOW-900*5000))&end=$NOW" "kline/ICP_USDT?interval=Min1&start=$((NOW-60*5000))&end=$NOW"; do
+              echo "--- $p"
+              curl -sS -m 30 -w "\n[http %{http_code}]\n" "$B/$p" | head -c 450
             done
           } 2>&1 | tee reports/probe/tardis.txt
       - name: Publish
