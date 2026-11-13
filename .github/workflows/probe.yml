@@ -22,15 +22,24 @@ jobs:
         run: |
           mkdir -p reports/probe
           {
-            B=https://contract.mexc.com/api/v1/contract
-            NOW=$(date +%s); DAY=$((NOW-14*86400)); MS=$((DAY*1000))
-            for p in "deals/ICP_USDT?limit=1000" "deals/ICP_USDT?limit=100&start_time=$MS&end_time=$((MS+3600000))" "deals/ICP_USDT?limit=100&start=$DAY&end=$((DAY+3600))" \
-                     "deals/ICP_USDT?limit=100&id=17000000000" "depth_commits/ICP_USDT/20" "kline/ICP_USDT?interval=Min1&start=$DAY&end=$((DAY+3600))" \
-                     "ticker?symbol=ICP_USDT" "funding_rate/history?symbol=ICP_USDT&page_num=1&page_size=5" "open_interest/history?symbol=ICP_USDT" "openInterest?symbol=ICP_USDT" \
-                     "kline/ICP_USDT?interval=Min15&start=$((NOW-900*5000))&end=$NOW" "kline/ICP_USDT?interval=Min1&start=$((NOW-60*5000))&end=$NOW"; do
-              echo "--- $p"
-              curl -sS -m 30 -w "\n[http %{http_code}]\n" "$B/$p" | head -c 450
-            done
+            curl -sS -m 60 -L https://docs.tardis.dev/llms-full.txt -o /tmp/full.txt || true
+            echo "size: $(wc -c < /tmp/full.txt)"
+            python3 - <<'PY'
+          import re
+          t = open("/tmp/full.txt", encoding="utf-8", errors="ignore").read()
+          seen = set()
+          for m in re.finditer(r"[^\n]*(free trial|Free trial|trial)[^\n]*", t):
+              line = m.group(0).strip()[:420]
+              if line not in seen:
+                  seen.add(line)
+                  print("-", line)
+              if len(seen) >= 40:
+                  break
+          i = t.find("agents-and-ai")
+          j = t.find("# AI agents")
+          print("=== agents page ===")
+          print(t[j:j + 2500] if j >= 0 else "not found")
+          PY
           } 2>&1 | tee reports/probe/tardis.txt
       - name: Publish
         if: always()
