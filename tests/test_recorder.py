@@ -5,9 +5,9 @@ from tradebot.strategies.mtf_entry import recorder as R
 
 
 def test_side_depth_counts_only_levels_within_pct():
-    bids = [[99.5, 3, 10], [99.0, 1, 10], [97.0, 2, 10]]          # mid 100, 1% => >= 99.0
+    bids = [[99.5, 10, 3], [99.0, 10, 1], [97.0, 10, 2]]          # mid 100, 1% => >= 99.0
     assert R.side_depth(bids, 100.0, 0.1, 0.01, True) == 99.5 * 10 * 0.1 + 99.0 * 10 * 0.1
-    asks = [[100.5, 1, 5], [101.5, 1, 5]]
+    asks = [[100.5, 5, 1], [101.5, 5, 1]]
     assert R.side_depth(asks, 100.0, 1.0, 0.01, False) == 100.5 * 5
     assert R.side_depth(None, 100.0, 1.0, 0.01, True) == 0.0
 
@@ -17,7 +17,7 @@ class FakeClient:
         if path.endswith("/detail"):
             return [{"symbol": "AAA_USDT", "contractSize": 1}, {"symbol": "BBB_USDT", "contractSize": 10}]
         if "/depth/" in path:
-            return {"bids": [[9.95, 1, 100]], "asks": [[10.05, 1, 100]]}
+            return {"bids": [[9.95, 100, 1]], "asks": [[10.05, 100, 1]]}
         raise AssertionError(path)
 
     def tickers(self):
@@ -48,3 +48,10 @@ def test_consolidate_merges_past_days_only(tmp_path):
     with gzip.open(made[0], "rt") as f:
         assert f.read().splitlines() == ["ts,symbol", "1,AAA", "1,AAA"]           # one header, two data rows
     assert sorted(os.listdir(d)) == ["day_20231113.csv.gz", "snap_20231114_0000.csv.gz"]   # today's file untouched
+
+
+def test_coverage_flags_truncated_books():
+    bids = [[99.9, 1, 1], [99.5, 1, 1]]                # reaches only 0.5% below mid
+    asks = [[100.1, 1, 1], [103.0, 1, 1]]
+    assert abs(R.coverage(bids, asks, 100.0) - 0.005) < 1e-12
+    assert R.coverage(None, asks, 100.0) == 0.0

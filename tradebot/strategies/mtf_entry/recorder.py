@@ -13,20 +13,27 @@ import time
 from datetime import datetime, timezone
 
 FIELDS = ["ts", "symbol", "last", "fair", "index", "bid1", "ask1", "vol24", "amt24", "oi", "funding", "chg24", "hi24", "lo24",
-          "bid_d1", "bid_d2", "ask_d1", "ask_d2", "csize"]
+          "bid_d1", "bid_d2", "ask_d1", "ask_d2", "d_cov", "csize"]
 DEPTH_MIN_TURNOVER = 300_000          # USDT 24h; depth only for contracts liquid enough to trade
-DEPTH_LIMIT = 50
+DEPTH_LIMIT, DEPTH_LIMIT_FALLBACK = 500, 100
 
 
 def side_depth(levels, mid: float, csize: float, pct: float, bids: bool) -> float:
-    """USDT value of resting orders within pct of mid. levels = [[price, orders, contracts], ...]."""
+    """USDT value of resting orders within pct of mid. levels = [[price, contracts, order_count], ...] (MEXC: quantity is index 1)."""
     lim = mid * (1 - pct) if bids else mid * (1 + pct)
     tot = 0.0
     for lv in levels or []:
-        p, v = float(lv[0]), float(lv[2])
+        p, v = float(lv[0]), float(lv[1])
         if (bids and p >= lim) or ((not bids) and p <= lim):
             tot += p * v * csize
     return tot
+
+
+def coverage(bids, asks, mid: float) -> float:
+    """How far from mid (as a fraction) the thinner side of the fetched book reaches: if it is < 0.02 the 2% depth is truncated."""
+    def far(levels):
+        return max((abs(float(lv[0]) - mid) / mid for lv in levels or []), default=0.0)
+    return min(far(bids), far(asks))
 
 
 def snapshot(client, now: int | None = None) -> list[dict]:
@@ -42,16 +49,20 @@ def snapshot(client, now: int | None = None) -> list[dict]:
         g = lambda k: t.get(k)
         rows.append({"ts": now, "symbol": s, "last": g("lastPrice"), "fair": g("fairPrice"), "index": g("indexPrice"), "bid1": g("bid1"), "ask1": g("ask1"),
                      "vol24": g("volume24"), "amt24": g("amount24"), "oi": g("holdVol"), "funding": g("fundingRate"), "chg24": g("riseFallRate"),
-                     "hi24": g("high24Price"), "lo24": g("lower24Price"), "bid_d1": "", "bid_d2": "", "ask_d1": "", "ask_d2": "", "csize": csize.get(s, "")})
+                     "hi24": g("high24Price"), "lo24": g("lower24Price"), "bid_d1": "", "bid_d2": "", "ask_d1": "", "ask_d2": "", "d_cov": "", "csize": csize.get(s, "")})
     for r in rows:
         try:
             if float(r["amt24"] or 0) < DEPTH_MIN_TURNOVER or not r["csize"]:
                 continue
-            d = client._request("GET", f"/api/v1/contract/depth/{r['symbol']}", {"limit": DEPTH_LIMIT}) or {}
+            try:
+                d = client._request("GET", f"/api/v1/contract/depth/{r['symbol']}", {"limit": DEPTH_LIMIT}) or {}
+            except Exception:
+                d = client._request("GET", f"/api/v1/contract/depth/{r['symbol']}", {"limit": DEPTH_LIMIT_FALLBACK}) or {}
             mid = float(r["last"])
             cs = float(r["csize"])
             r["bid_d1"], r["bid_d2"] = (round(side_depth(d.get("bids"), mid, cs, p, True), 1) for p in (0.01, 0.02))
             r["ask_d1"], r["ask_d2"] = (round(side_depth(d.get("asks"), mid, cs, p, False), 1) for p in (0.01, 0.02))
+            r["d_cov"] = round(coverage(d.get("bids"), d.get("asks"), mid), 5)
         except Exception as e:                                # one failing contract must not lose the whole snapshot
             print("depth skip", r["symbol"], e, file=sys.stderr)
     return rows
