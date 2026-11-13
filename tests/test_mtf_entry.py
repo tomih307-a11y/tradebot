@@ -140,3 +140,27 @@ def test_early_signs_features_no_lookahead_and_labels():
     assert not f["F1"][1199] and f["F1"][1200] and f["F1"][1200 + 191] and not f["F1"][1200 + 192]   # recurrence flag lasts 48h exactly
     assert f["F6"][900] and f["F7"][900] and fmax[1199] > 14.9        # label sees the +15% next candle
     assert np.isnan(fmax[-1]) and valid[1100]
+
+
+def test_tardis_day_arrays_and_signals_no_lookahead():
+    from tradebot.strategies.mtf_entry import tardis_free as T
+    day0 = 1_700_000_000_000_000 // 86_400_000_000 * 86_400_000_000
+    rng = np.random.default_rng(11)
+    trades, tick = [], []
+    p = 10.0
+    for m in range(1440):
+        for s in range(6):
+            ts = day0 + m * 60_000_000 + s * 9_000_000
+            p = p * (1 + rng.normal(0, 0.0002))
+            if 800 <= m < 830:                                    # a pump: price +, heavy buying
+                p *= 1.004
+            trades.append((ts, "buy" if (800 <= m < 830 or rng.random() < 0.5) else "sell", p, 100.0))
+        tick.append((day0 + m * 60_000_000, 1_000_000.0 * (1.03 if m >= 700 else 1.0), -0.0001, 10.0, 10.0))
+    d = T.day_arrays(trades, tick, 1.0, day0)
+    assert d["cnt"][0] == 6 and d["buy"].sum() > 0 and not np.isnan(d["c"]).any()
+    flags, fmax = T.signals_and_labels(d)
+    n = len(fmax)
+    assert n > 100 and all(len(v) == n for v in flags.values())
+    assert flags["S5"].all()                                      # funding is -0.01% all day
+    assert flags["S3"].any() and not flags["S3"][:5].any()        # OI jumped at minute 700 only
+    assert (fmax >= 10).any() and np.nanmax(fmax) > 10            # pump creates +10% labels before it

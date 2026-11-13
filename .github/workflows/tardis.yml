@@ -1,0 +1,36 @@
+name: tardis-free-study
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-tardis.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Tests
+        run: python -m pytest tests/test_mtf_entry.py -q
+      - name: Tardis free-days study (rules: docs/TARDIS_FREE.md)
+        run: |
+          mkdir -p reports/tardis
+          python -m tradebot.strategies.mtf_entry.tardis_free reports/tardis/tardis_free.txt 8 2>&1 | tail -60
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/tardis/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b tardis-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "tardis free study" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin tardis-results
