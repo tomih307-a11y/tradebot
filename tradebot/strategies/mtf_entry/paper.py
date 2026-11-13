@@ -230,7 +230,29 @@ def status(client) -> None:
 
 if __name__ == "__main__":
     c = MexcClient(__import__("tradebot.config", fromlist=["load_config"]).load_config("config.toml").mexc)
-    if len(sys.argv) >= 2 and sys.argv[1] == "boom":
+    if len(sys.argv) == 3 and sys.argv[1] == "boomreplay":
+        sym, now = sys.argv[2], int(time.time())
+        k = drop_unclosed(fetch_range(c, sym, "Min15", int(now // 900 * 900) - 6 * 96 * 900, now), "Min15", now)
+        o, h, l, cl, v, tt = (np.asarray(k[f], float) for f in ("open", "high", "low", "close", "vol", "time"))
+        hhmm = lambda x: time.strftime("%m-%d %H:%M", time.gmtime(int(x)))
+        print(f"{sym}: {len(cl)} شمعة 15د من {hhmm(tt[0])} إلى {hhmm(tt[-1])} (UTC) · السعر الآن {cl[-1]:.6g}")
+        first = {}
+        for i in range(M.BO_LOOKBACK + 3, len(cl)):
+            r = M.breakout(o[:i + 1], h[:i + 1], l[:i + 1], cl[:i + 1], v[:i + 1])
+            if r and r["age"] == 0 and (r["dir"], round(r["range_hi"], 12)) not in first:
+                first[(r["dir"], round(r["range_hi"], 12))] = i
+                print(f"🔔 إشارة {'صعود' if r['dir'] == 1 else 'هبوط'} عند {hhmm(tt[i])} UTC · سعر {cl[i]:.6g} · حجم ×{r['vol_x']:.1f} · "
+                      f"بعدها وصل أقصى {h[i:].max():.6g} ({(h[i:].max() / cl[i] - 1) * 100:+.1f}%) وأدنى {l[i:].min():.6g} ({(l[i:].min() / cl[i] - 1) * 100:+.1f}%) والآن {(cl[-1] / cl[i] - 1) * 100:+.1f}%")
+        if not first:
+            print("لم تنطلق أي إشارة خلال الفترة. أكبر 6 شموع صعوداً/هبوطاً وسبب عدم الإطلاق:")
+            ret = (cl - o) / o * 100
+            for i in np.argsort(-np.abs(ret[M.BO_LOOKBACK + 3:]))[:6] + M.BO_LOOKBACK + 3:
+                lo_, hi_ = l[i - M.BO_LOOKBACK:i].min(), h[i - M.BO_LOOKBACK:i].max()
+                med = np.median(v[i - M.BO_LOOKBACK:i])
+                rg = h[i] - l[i]
+                print(f"{hhmm(tt[i])} UTC شمعة {ret[i]:+.1f}% · عرض النطاق السابق {(hi_ - lo_) / lo_ * 100:.1f}% (الحد {M.BO_MAX_WIDTH_PCT:.0f}%) · حجم ×{v[i] / med:.1f} (الحد {M.BO_VOL_MULT:.0f}) · "
+                      f"جسم {(abs(cl[i] - o[i]) / rg if rg else 0):.2f} (الحد {M.BO_BODY_FRAC}) · كسر النطاق: {'نعم' if cl[i] > hi_ or cl[i] < lo_ else 'لا'}")
+    elif len(sys.argv) >= 2 and sys.argv[1] == "boom":
         rows = breakout_scan(c)
         print(f"انفجارات مبكرة (كسر نطاق هادئ 24س على حجم ≥ {M.BO_VOL_MULT:.0f}× المعتاد): {len(rows)}")
         for r in sorted(rows, key=lambda r: (r["age"], -r["vol_x"])):
