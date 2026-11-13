@@ -82,18 +82,18 @@ def write_snapshot(rows: list[dict], out_dir: str, now: int | None = None) -> st
     return path
 
 
-def consolidate(data_dir: str, today: str | None = None) -> list[str]:
-    """Merge the small per-run files of every PAST UTC day into one day_YYYYMMDD.csv.gz (and delete the small ones)."""
+def consolidate(data_dir: str, today: str | None = None, prefix: str = "snap_", out_prefix: str = "day_") -> list[str]:
+    """Merge the small per-run files (prefix_YYYYMMDD_*) of every PAST UTC day into one out_prefix YYYYMMDD.csv.gz (and delete the small ones)."""
     today = today or datetime.now(timezone.utc).strftime("%Y%m%d")
     by_day: dict[str, list[str]] = {}
     for n in sorted(os.listdir(data_dir)):
-        if n.startswith("snap_") and n.endswith(".csv.gz"):
-            day = n[5:13]
+        if n.startswith(prefix) and n.endswith(".csv.gz"):
+            day = n[len(prefix):len(prefix) + 8]
             if day < today:
                 by_day.setdefault(day, []).append(n)
     made = []
     for day, names in by_day.items():
-        out = os.path.join(data_dir, f"day_{day}.csv.gz")
+        out = os.path.join(data_dir, f"{out_prefix}{day}.csv.gz")
         with gzip.open(out, "wt", encoding="utf-8") as fo:
             for i, n in enumerate(names):
                 with gzip.open(os.path.join(data_dir, n), "rt", encoding="utf-8") as fi:
@@ -115,3 +115,5 @@ if __name__ == "__main__":
         print(f"{len(rows)} عقداً · عمق لـ{have_depth} · {p}")
     elif len(sys.argv) == 3 and sys.argv[1] == "consolidate":
         print(consolidate(sys.argv[2]))
+    elif len(sys.argv) == 3 and sys.argv[1] == "consolidate-flow":
+        print(consolidate(sys.argv[2], prefix="flow_", out_prefix="flowday_"))

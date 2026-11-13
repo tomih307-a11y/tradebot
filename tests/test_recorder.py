@@ -55,3 +55,21 @@ def test_coverage_flags_truncated_books():
     asks = [[100.1, 1, 1], [103.0, 1, 1]]
     assert abs(R.coverage(bids, asks, 100.0) - 0.005) < 1e-12
     assert R.coverage(None, asks, 100.0) == 0.0
+
+
+def test_flow_aggregator_minutes_flags_and_flush():
+    from tradebot.strategies.mtf_entry.flow_recorder import Aggregator, write_part
+    a = Aggregator({"AAA_USDT": 0.01})
+    t0 = 1_700_000_000_000                                        # ms, some minute M
+    a.add("AAA_USDT", 100.0, 5, 1, 1, t0)                         # buy opening: 100*5*0.01 = 5 USDT
+    a.add("AAA_USDT", 101.0, 10, 2, 3, t0 + 1000)                 # sell, unchanged: 10.1 USDT
+    a.add("AAA_USDT", 102.0, 1, 1, 1, t0 + 61_000)                # next minute
+    m = int(t0 // 60000 * 60)
+    done = a.flush(m + 70)                                         # minute M finished, M+1 still open
+    assert len(done) == 1 and done[0]["minute"] == m and done[0]["n"] == 2
+    assert done[0]["v_T1_O1"] == 5.0 and done[0]["v_T2_O3"] == 10.1 and done[0]["p_open"] == 100.0 and done[0]["p_close"] == 101.0
+    rest = a.flush(m + 200, keep_current=False)
+    assert len(rest) == 1 and rest[0]["minute"] == m + 60
+    import tempfile
+    p = write_part(done, tempfile.mkdtemp(), "t")
+    assert p and p.endswith(".csv.gz") and write_part([], "/tmp/x", "t") is None

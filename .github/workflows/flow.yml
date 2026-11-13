@@ -1,0 +1,48 @@
+name: record-trade-flow
+# يسجّل تدفق الصفقات (من يشتري/يبيع بعدوانية، وهل تُفتح مراكز جديدة) عبر WebSocket العام لـMEXC، مجمّعاً بالدقيقة، في الفرع flow-data.
+# كل مهمة تعمل نحو 5 ساعات و45 دقيقة، وتتبعها التالية بعد 6 ساعات. بيانات عامة بلا مفاتيح.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "مدة التسجيل بالدقائق"
+        default: "345"
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-flow.txt"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: record-trade-flow
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt websocket-client
+      - name: Record trade flow
+        env:
+          REPO: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then MIN=3; elif [ -n "${{ github.event.inputs.minutes }}" ]; then MIN=${{ github.event.inputs.minutes }}; else MIN=345; fi
+          mkdir -p /tmp/flow
+          python -m tradebot.strategies.mtf_entry.flow_recorder /tmp/flow "$MIN" 2>&1 | tee /tmp/flow.log &
+          PID=$!
+          while kill -0 $PID 2>/dev/null; do
+            for i in $(seq 1 120); do sleep 10; kill -0 $PID 2>/dev/null || break; done
+            ./tools/publish_data.sh flow-data /tmp/flow "$REPO" || true
+          done
+          wait $PID || true
+          ./tools/publish_data.sh flow-data /tmp/flow "$REPO"
+          tail -5 /tmp/flow.log
