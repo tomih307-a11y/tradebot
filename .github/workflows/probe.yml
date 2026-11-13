@@ -22,24 +22,7 @@ jobs:
         run: |
           mkdir -p reports/probe
           {
-            curl -sS -m 60 -L https://docs.tardis.dev/llms-full.txt -o /tmp/full.txt || true
-            echo "size: $(wc -c < /tmp/full.txt)"
-            python3 - <<'PY'
-          import re
-          t = open("/tmp/full.txt", encoding="utf-8", errors="ignore").read()
-          seen = set()
-          for m in re.finditer(r"[^\n]*(free trial|Free trial|trial)[^\n]*", t):
-              line = m.group(0).strip()[:420]
-              if line not in seen:
-                  seen.add(line)
-                  print("-", line)
-              if len(seen) >= 40:
-                  break
-          i = t.find("agents-and-ai")
-          j = t.find("# AI agents")
-          print("=== agents page ===")
-          print(t[j:j + 2500] if j >= 0 else "not found")
-          PY
+            curl -sS -m 60 -L https://docs.tardis.dev/historical-data-details/mexc-futures.md | head -c 9000
           } 2>&1 | tee reports/probe/tardis.txt
       - name: Publish
         if: always()
