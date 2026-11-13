@@ -22,22 +22,16 @@ jobs:
         run: |
           mkdir -p reports/probe
           {
-            curl -sS -m 30 -L https://docs.tardis.dev/faq/billing-and-subscriptions.md -o /tmp/b.md
-            echo "=== how much historical data (section) ==="
-            python3 - <<'PY'
-          t = open("/tmp/b.md", encoding="utf-8").read()
-          i = t.find("### How much historical data")
-          print(t[i:i + 3500])
-          j = t.find("### What is included in Perpetuals")
-          print("=== perpetuals plan ===")
-          print(t[j:j + 1500])
-          import re
-          print("=== price mentions ===")
-          for m in re.finditer(r"[^\n]*(\$|USD|per month|/month|price|pricing)[^\n]*", t):
-              print(m.group(0)[:300])
-          PY
-            echo "=== tardis.dev order form text ==="
-            curl -sS -m 30 -L https://tardis.dev/ | python3 -c "import sys,re,html; t=sys.stdin.read(); t=re.sub(r'<script.*?</script>|<style.*?</style>','',t,flags=re.S); t=re.sub(r'<[^>]+>','\n',t); t=html.unescape(t); lines=[l.strip() for l in t.split('\n') if l.strip()]; print('\n'.join(l for l in lines if re.search(r'\\$|USD|month|year|Solo|Academic|Professional|Business|Perpetuals|Derivatives', l))[:5000])"
+            curl -sS -m 30 -L https://docs.tardis.dev/downloadable-csv-files/overview.md | head -c 5000
+            echo; echo "=== free day downloads (first day of month, no key) ==="
+            for dt in trades derivative_ticker; do
+              for sym in AKE_USDT ICP_USDT; do
+                u="https://datasets.tardis.dev/v1/mexc-futures/$dt/2026/11/01/$sym.csv.gz"
+                echo "--- $u"
+                code=$(curl -sS -m 60 -L -o /tmp/f.csv.gz -w "%{http_code} %{size_download}" "$u"); echo "http/size: $code"
+                if [ "${code%% *}" = "200" ]; then zcat /tmp/f.csv.gz | head -3; echo "rows: $(zcat /tmp/f.csv.gz | wc -l)"; fi
+              done
+            done
           } 2>&1 | tee reports/probe/tardis.txt
       - name: Publish
         if: always()
