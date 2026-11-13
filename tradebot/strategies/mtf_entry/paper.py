@@ -295,6 +295,13 @@ if __name__ == "__main__":
         print(f"وقف متحرك مبدئي (عند الدخول): {M.trail_stop(d, entry, atr):.6g}")
         print(f"وقف متحرك الآن (بحسب أفضل سعر بلغه السعر {ext:.6g}): {M.trail_stop(d, ext, atr):.6g}")
         print(f"ربح/خسارة الآن: {(px / entry - 1) * d * 100:+.2f}% من السعر")
+    elif len(sys.argv) >= 2 and sys.argv[1] == "longs":
+        rows = long_candidates(c)
+        print(f"لونق عام + زخم (اليومي و4س غير هابطين، النتيجة ≥ 0.5، والساعة و30 و15 دقيقة صاعدة): {len(rows)}")
+        for r in rows[:25]:
+            z = f"{r['zone'][0]:.6g}-{r['zone'][1]:.6g}" if r["zone"] else "-"
+            print(f"{r['symbol']:<14} نتيجة {r['score']:+.2f} · امتداد {r['ext']:+.2f} ATR · حركة الساعة {r['atr_pct']:.1f}% · يومية {r['daily_pct']:+.1f}% · 24س {r['chg24']:+.1f}% · "
+                  f"سيولة {r['turn_m']:.1f}M · سعر {r['price']:.6g} · منطقة {z}")
     elif len(sys.argv) >= 2 and sys.argv[1] == "top":
         rows = top_movers(c, int(sys.argv[2]) if len(sys.argv) > 2 else 50)
         side = lambda v: "لونق" if v == 1 else "شورت" if v == -1 else "محايد"
