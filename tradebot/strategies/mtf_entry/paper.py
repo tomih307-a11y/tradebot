@@ -209,7 +209,19 @@ def status(client) -> None:
 
 if __name__ == "__main__":
     c = MexcClient(__import__("tradebot.config", fromlist=["load_config"]).load_config("config.toml").mexc)
-    if len(sys.argv) >= 2 and sys.argv[1] == "top":
+    if len(sys.argv) == 5 and sys.argv[1] == "trail":
+        sym, side_, entry = sys.argv[2], sys.argv[3], float(sys.argv[4])
+        d, now = (1 if side_ == "long" else -1), int(time.time())
+        k = fetch(c, sym, M.ZONE_TF, now)
+        hh, ll, cc = (np.asarray(k[f], float) for f in ("high", "low", "close"))
+        atr = M.last_atr(hh, ll, cc)
+        px = float(next(t["lastPrice"] for t in c.tickers() if t["symbol"] == sym))
+        ext = max(entry, px) if d == 1 else min(entry, px)
+        print(f"{sym} {side_} دخول {entry} · السعر الآن {px} · ATR الساعة {atr:.6g} ({atr / px * 100:.2f}% من السعر)")
+        print(f"وقف متحرك مبدئي (عند الدخول): {M.trail_stop(d, entry, atr):.6g}")
+        print(f"وقف متحرك الآن (بحسب أفضل سعر بلغه السعر {ext:.6g}): {M.trail_stop(d, ext, atr):.6g}")
+        print(f"ربح/خسارة الآن: {(px / entry - 1) * d * 100:+.2f}% من السعر")
+    elif len(sys.argv) >= 2 and sys.argv[1] == "top":
         rows = top_movers(c, int(sys.argv[2]) if len(sys.argv) > 2 else 50)
         side = lambda v: "لونق" if v == 1 else "شورت" if v == -1 else "محايد"
         sym_ = lambda v: "▲" if v == 1 else "▼" if v == -1 else "•"
