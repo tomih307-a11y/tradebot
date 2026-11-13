@@ -44,5 +44,6 @@ jobs:
             ./tools/publish_data.sh flow-data /tmp/flow "$REPO" || true
           done
           wait $PID || true
+          sleep 5
           ./tools/publish_data.sh flow-data /tmp/flow "$REPO"
           tail -5 /tmp/flow.log

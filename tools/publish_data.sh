@@ -5,7 +5,7 @@ BRANCH=$1; SRC=$2; REPO=$3
 shopt -s nullglob
 files=()
 for f in "$SRC"/*.csv.gz; do
-  if [ $(( $(date +%s) - $(stat -c %Y "$f") )) -gt 10 ]; then files+=("$f"); fi
+  if [ $(( $(date +%s) - $(stat -c %Y "$f") )) -gt 3 ]; then files+=("$f"); fi
 done
 [ ${#files[@]} -eq 0 ] && { echo "nothing to publish"; exit 0; }
 rm -rf /tmp/pub
