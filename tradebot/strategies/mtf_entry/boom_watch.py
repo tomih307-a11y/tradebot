@@ -216,3 +216,35 @@ if __name__ == "__main__" and len(sys.argv) >= 2 and sys.argv[1] == "watch":
     print(txt)
     if len(sys.argv) > 2:
         open(sys.argv[2], "w", encoding="utf-8").write(txt)
+
+
+def pick_text(client) -> str:
+    """Watchlist coins crossed with the multi-frame direction, zone and extension, to rank a possible trade (paper/analysis only)."""
+    from .paper import analyse, fetch
+
+    rows = [r for r in watch_snapshot(client) if r["watch"]]
+    now, out = int(time.time()), []
+    for r in rows:
+        try:
+            d, score, zone, hit, _, states = analyse(client, r["sym"], now)
+            k = fetch(client, r["sym"], M.ZONE_TF, now)
+            hh, ll, cc = (np.asarray(k[f], float) for f in ("high", "low", "close"))
+            atr, ef = M.last_atr(hh, ll, cc), float(M.ema(cc, M.EMA_FAST)[-1])
+        except Exception:
+            continue
+        lean = d or (1 if score > 0 else -1 if score < 0 else 0)
+        ext = (r["price"] - ef) / atr * lean if lean and atr == atr else float("nan")
+        out.append({**r, "dir": d, "lean": lean, "score": score, "zone": zone, "ext": ext, "states": states, "atr_pct": atr / r["price"] * 100})
+    lines = ["مرشحون من قائمة المراقبة مع اتجاه الفريمات (النتيجة ±1: اتفاق كل الفريمات)"]
+    for r in sorted(out, key=lambda r: -abs(r["score"])):
+        z = f"{r['zone'][0]:.6g}-{r['zone'][1]:.6g}" if r["zone"] else "-"
+        lines.append(f"{r['sym']:<10} {'لونق' if r['lean'] == 1 else 'شورت' if r['lean'] == -1 else 'محايد'} {'مؤكد' if r['dir'] else 'ضعيف'} {r['score']:+.2f} · امتداد {r['ext']:+.2f} · "
+                     f"آخر انفجار قبل {r['last_h']:.0f}س {'↑' if r['last_dir'] == 1 else '↓'} · منذها {r['since_pct']:+.1f}% · ATR الساعة {r['atr_pct']:.1f}% · سعر {r['price']:.6g} · منطقة {z} · "
+                     + " ".join(f"{k[:4]}{'▲' if v == 1 else '▼' if v == -1 else '•'}" for k, v in r["states"].items()))
+    return "\n".join(lines)
+
+
+if __name__ == "__main__" and len(sys.argv) >= 2 and sys.argv[1] == "pick":
+    from tradebot.config import load_config
+    from tradebot.mexc.client import MexcClient
+    print(pick_text(MexcClient(load_config("config.toml").mexc)))
