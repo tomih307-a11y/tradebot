@@ -1,0 +1,33 @@
+name: mexc-probe
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-probe.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install websocket-client
+      - name: Probe
+        run: |
+          mkdir -p reports/probe
+          python tools/mexc_probe.py 2>&1 | tee reports/probe/probe.txt
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp -r reports/probe/* /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b probe-results
+          git config user.name "study-bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "probe" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin probe-results
