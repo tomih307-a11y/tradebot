@@ -22,10 +22,9 @@ jobs:
         run: |
           mkdir -p reports/probe
           {
-            for u in "charts/historical/_SPX.json" "charts/historical/_VIX.json" "quotes/_VIX.json" "quotes/_SPX.json"; do echo "== $u"; curl -sS -m 60 -L "https://cdn.cboe.com/api/global/delayed_quotes/$u" -o /tmp/x.json; echo $(wc -c </tmp/x.json); head -c 400 /tmp/x.json; echo; cp /tmp/x.json "reports/probe/$(echo $u | tr / _)"; done
-            echo "== FRED SP500"; curl -sS -m 40 -L "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SP500" | tail -30
-            echo "== FRED VIX"; curl -sS -m 40 -L "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS" | tail -10
-          } 2>&1 | tee reports/probe/spx2.txt
+            curl -sS -m 90 -L "https://cdn.cboe.com/api/global/delayed_quotes/options/SPY.json" -o reports/probe/spy_chain.json; ls -l reports/probe/spy_chain.json
+            curl -sS -m 40 -L "https://cdn.cboe.com/api/global/delayed_quotes/quotes/SPY.json" -o reports/probe/spy_q.json; head -c 500 reports/probe/spy_q.json
+          } 2>&1 | tee reports/probe/spy.txt
       - name: Publish
         if: always()
         run: |
