@@ -22,8 +22,12 @@ jobs:
         run: |
           mkdir -p reports/probe
           {
-            curl -sS -m 60 -L https://docs.tardis.dev/historical-data-details/mexc-futures.md | head -c 9000
-          } 2>&1 | tee reports/probe/tardis.txt
+            echo "== STOOQ SPX daily"; curl -sS -m 40 -L "https://stooq.com/q/d/l/?s=%5Espx&i=d" | tail -40
+            echo "== STOOQ VIX daily"; curl -sS -m 40 -L "https://stooq.com/q/d/l/?s=%5Evix&i=d" | tail -8
+            echo "== STOOQ ES futures"; curl -sS -m 40 -L "https://stooq.com/q/l/?s=es.f&f=sd2t2ohlcv&h&e=csv"
+            echo "== CBOE SPX options"; curl -sS -m 90 -L "https://cdn.cboe.com/api/global/delayed_quotes/options/_SPX.json" -o /tmp/spx.json; ls -l /tmp/spx.json; head -c 600 /tmp/spx.json
+          } 2>&1 | tee reports/probe/spx.txt
+          cp /tmp/spx.json reports/probe/spx_chain.json 2>/dev/null || true
       - name: Publish
         if: always()
         run: |
