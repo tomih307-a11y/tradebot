@@ -177,3 +177,13 @@ def test_channel_logic_setups_and_outcomes():
     a = CL.atr14(h, l, c)
     idx, r, w = CL.outcomes(o, h, l, c, a, np.arange(70, 100))
     assert len(idx) == len(r) == len(w) and np.isfinite(r).all()
+
+
+def test_hunter_tiers_logic():
+    import numpy as np
+    from tradebot.strategies.mtf_entry import hunter_tiers as HT
+    f1 = np.array([1, 1, 1, 0, 0, 0], bool); f2 = np.array([1, 1, 0, 1, 0, 0], bool); f3 = np.array([1, 0, 0, 1, 0, 1], bool)
+    t = HT.tier_of({"F1": f1, "F2": f2, "F3": f3})
+    assert list(t) == [0, 1, 2, 3, -1, -1]
+    al = HT.alerts(np.array([0] * 3 + [-1] * 10 + [0]))
+    assert [i for i, _ in al] == [0, 13]
