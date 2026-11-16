@@ -187,3 +187,16 @@ def test_hunter_tiers_logic():
     assert list(t) == [0, 1, 2, 3, -1, -1]
     al = HT.alerts(np.array([0] * 3 + [-1] * 10 + [0]))
     assert [i for i, _ in al] == [0, 13]
+
+
+def test_channel_sim_breakeven_and_liquidation():
+    import numpy as np
+    from tradebot.strategies.mtf_entry import channel_sim as CS
+    sig = dict(entry=100.0, stop=95.0, tps=[102.5, 106.0])
+    t = np.arange(6) * 60.0
+    h = np.array([100, 103, 103, 103, 103, 103.0]); l = np.array([100, 99.9, 101, 100.5, 99.0, 99.0]); c = h.copy()
+    ev, st = CS.simulate(sig, h, l, c, t, 0, 20, 0.0)          # TP1 hit then back to entry -> only TP1 half pnl
+    assert abs(sum(p for _, p in ev) - 0.5 * 20 * 0.025) < 1e-9 and "بعد 1/2" in st
+    l2 = np.array([100, 94.0, 94, 94, 94, 94.0])
+    ev, st = CS.simulate(sig, h * 0 + 100, l2, c * 0 + 100, t, 0, 20, 0.0)   # -6% at 20x -> liquidated first (-4.5%)
+    assert st == "تصفية قبل TP1" and abs(sum(p for _, p in ev) + 1.0) < 1e-9
