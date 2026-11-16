@@ -11,7 +11,7 @@ from tradebot.config import load_config
 from tradebot.data.klines import drop_unclosed, fetch_range
 from tradebot.mexc.client import MexcClient
 
-DAYS, WIN, LIQ = 45, 3, 0.045
+DAYS, WIN, LIQ = 120, 3, 0.045
 
 
 def hm(s):                                   # "HH:MM" Riyadh -> minute-of-day UTC
@@ -47,16 +47,32 @@ def touches(h, tp, look=30):
 
 
 def locate(h, t, sig):
-    by_day = {}
+    """Match announced hit times (+-WIN min, first-touch events). Hits may fall on different days: events are grouped
+    within 36h of an anchor event; the group matching the most targets wins (ties: latest)."""
+    ev = []                                              # (k, bar index)
     for k, s in sig["hits"].items():
         for i in touches(h, sig["tps"][k]):
             mod = int((t[i] % 86400) // 60)
             if min((mod - hm(s)) % 1440, (hm(s) - mod) % 1440) <= WIN:
-                by_day.setdefault(int(t[i] // 86400), {}).setdefault(k, int(i))
-    if not by_day:
+                ev.append((k, int(i)))
+    if not ev:
         return None, 0, 0
-    best = max(by_day, key=lambda d: (len(by_day[d]), d))
-    return by_day[best], len(by_day[best]), len([d for d in by_day if len(by_day[d]) == len(by_day[best])])
+    best, bscore, ties = None, 0, 0
+    for _, a in sorted(ev, key=lambda x: x[1]):
+        grp = {}
+        for k, i in ev:
+            if 0 <= t[i] - t[a] <= 36 * 3600:
+                grp.setdefault(k, i)
+        sc = len(grp)
+        if sc > bscore or (sc == bscore and sc > 0 and t[a] > t[min(best.values())]):
+            if sc == bscore:
+                ties += 1
+            else:
+                ties = 1
+            best, bscore = grp, sc
+        elif sc == bscore:
+            ties += 1
+    return best, bscore, ties
 
 
 def main():
