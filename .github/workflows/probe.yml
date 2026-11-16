@@ -22,9 +22,14 @@ jobs:
         run: |
           mkdir -p reports/probe
           {
-            curl -sS -m 90 -L "https://cdn.cboe.com/api/global/delayed_quotes/options/SPY.json" -o reports/probe/spy_chain.json; ls -l reports/probe/spy_chain.json
-            curl -sS -m 40 -L "https://cdn.cboe.com/api/global/delayed_quotes/quotes/SPY.json" -o reports/probe/spy_q.json; head -c 500 reports/probe/spy_q.json
-          } 2>&1 | tee reports/probe/spy.txt
+            UA="Mozilla/5.0"
+            for sym in "%5EGSPC" "TSLA" "%5EVIX"; do
+              echo "== yahoo $sym"; curl -sS -m 60 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/$sym?range=1y&interval=1d" -o "reports/probe/y_$sym.json"; wc -c < "reports/probe/y_$sym.json"; head -c 200 "reports/probe/y_$sym.json"; echo
+            done
+            for q in _SPX TSLA _VIX; do echo "== cboe $q"; curl -sS -m 40 -L "https://cdn.cboe.com/api/global/delayed_quotes/quotes/$q.json" -o "reports/probe/q_$q.json"; head -c 700 "reports/probe/q_$q.json"; echo; done
+            curl -sS -m 90 -L "https://cdn.cboe.com/api/global/delayed_quotes/options/TSLA.json" -o reports/probe/tsla_chain.json; ls -l reports/probe/tsla_chain.json
+            curl -sS -m 90 -L "https://cdn.cboe.com/api/global/delayed_quotes/options/_SPX.json" -o reports/probe/spx_chain.json
+          } 2>&1 | tee reports/probe/mk.txt
       - name: Publish
         if: always()
         run: |
