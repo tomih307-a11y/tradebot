@@ -63,7 +63,7 @@ def main():
     out = sys.argv[1] if len(sys.argv) > 1 else None
     cl, now = MexcClient(load_config("config.toml").mexc), int(time.time())
     lines = ["فحص توصيات القناة بشموع الدقيقة · القواعد: docs/CHANNEL_CHECK2.md", ""]
-    rows = []
+    rows, status = [], []
     for sig in SIGNALS:
         sym = sig["sym"]
         try:
@@ -98,6 +98,11 @@ def main():
                 stop_i = q; break
         stop_before = stop_i is not None and stop_i < i1
         mfe = (h[j:j + 1440].max() / e - 1) * 100
+        tps_hit = int(sum(1 for tp in sig["tps"] if h[j:].max() >= tp))
+        stop_all = next((q for q in range(j, len(c)) if (t[q] + 60) % 14400 == 0 and c[q] < sig["stop"]), None)
+        status.append(f"{sym}: دخول {e} · الآن {c[-1]:.6g} ({(c[-1] / e - 1) * 100:+.1f}% من الدخول، ×20 = {(c[-1] / e - 1) * 2000:+.0f}%) · "
+                      f"أعلى سعر منذ الدخول {(h[j:].max() / e - 1) * 100:+.1f}% · أهداف بُلغت {tps_hit}/{len(sig['tps'])} · "
+                      + (f"أول إغلاق 4H تحت الوقف: {time.strftime('%m-%d %H:%M', time.gmtime(t[stop_all] + 60))} UTC عند {c[stop_all]:.6g} ({(c[stop_all] / e - 1) * 100:+.1f}%)" if stop_all is not None else "لم يُغلق 4H تحت الوقف"))
         rows.append(dict(sym=sym, lead=lead, r24=r24, r6=r6, vr=vr, ex48=ex48, mae=mae, liq=liq, mfe=mfe))
         lines.append(f"{sym}: {time.strftime('%Y-%m-%d %H:%M', time.gmtime(t[i1]))} UTC (TP1) · تطابق {nmatch} · دخول متاح قبل TP1 بـ {lead:.0f} د · "
                      f"عائد 24س قبل الدخول {r24:+.1f}% · 6س {r6:+.1f}% · حجم آخر 15د ×{vr:.1f} · انفجارات 48س: {ex48} · "
@@ -107,6 +112,7 @@ def main():
         lines += ["", f"ملخص ({len(rows)} توصية محدّدة): وسيط مهلة الدخول المتاح قبل TP1 {np.median(a('lead')):.0f} د · وسيط عائد 24س قبل الدخول {np.median(a('r24')):+.1f}% · "
                   f"عندها انفجار 15د≥10% خلال 48س: {int((a('ex48') >= 1).sum())}/{len(rows)} · قفزة حجم ≥3×: {int((a('vr') >= 3).sum())}/{len(rows)} · "
                   f"لمست مستوى تصفية 20x قبل TP1: {int(a('liq').sum())}/{len(rows)}"]
+    lines += ["", "وضع التوصيات الآن (من لحظة الدخول المتاح حتى الآن):"] + status
     text = "\n".join(lines)
     print(text)
     if out:
