@@ -11,7 +11,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,7 +21,7 @@ jobs:
       - name: Live MTF scan (read-only, no orders)
         run: |
           mkdir -p reports/mtf_scan
-          { python -m tradebot.strategies.mtf_entry.paper trail ICP_USDT long 2.625; echo; python -m tradebot.strategies.mtf_entry.paper detail ICP_USDT; echo; python -m tradebot.strategies.mtf_entry.boom_watch coin ICP_USDT; } 2>&1 | tee reports/mtf_scan/icp.txt
+          python -m tradebot.strategies.mtf_entry.channel_logic reports/mtf_scan/channel_logic.txt 2>&1 | tail -60
       - name: Publish
         if: always()
         run: |

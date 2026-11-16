@@ -164,3 +164,16 @@ def test_tardis_day_arrays_and_signals_no_lookahead():
     assert flags["S5"].all()                                      # funding is -0.01% all day
     assert flags["S3"].any() and not flags["S3"][:5].any()        # OI jumped at minute 700 only
     assert (fmax >= 10).any() and np.nanmax(fmax) > 10            # pump creates +10% labels before it
+
+
+def test_channel_logic_setups_and_outcomes():
+    import numpy as np
+    from tradebot.strategies.mtf_entry import channel_logic as CL
+    rng = np.random.default_rng(1)
+    c = np.concatenate([np.full(80, 100.0), 100 * np.cumprod(1 + np.full(40, 0.004)), 112 - np.arange(1, 6) * 0.9, 107 + np.arange(40) * 0.3]) + rng.normal(0, 0.05, 165)
+    h, l, o = c + 0.3, c - 0.3, c.copy()
+    s, b1 = CL.setups(c)
+    assert s.dtype == bool and b1.dtype == bool and (s & ~b1).sum() == 0
+    a = CL.atr14(h, l, c)
+    idx, r, w = CL.outcomes(o, h, l, c, a, np.arange(70, 100))
+    assert len(idx) == len(r) == len(w) and np.isfinite(r).all()
