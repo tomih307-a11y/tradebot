@@ -23,13 +23,13 @@ jobs:
           mkdir -p reports/probe
           {
             UA="Mozilla/5.0"
-            for sym in "%5EGSPC" "TSLA" "%5EVIX"; do
-              echo "== yahoo $sym"; curl -sS -m 60 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/$sym?range=1y&interval=1d" -o "reports/probe/y_$sym.json"; wc -c < "reports/probe/y_$sym.json"; head -c 200 "reports/probe/y_$sym.json"; echo
-            done
-            for q in _SPX TSLA _VIX; do echo "== cboe $q"; curl -sS -m 40 -L "https://cdn.cboe.com/api/global/delayed_quotes/quotes/$q.json" -o "reports/probe/q_$q.json"; head -c 700 "reports/probe/q_$q.json"; echo; done
-            curl -sS -m 90 -L "https://cdn.cboe.com/api/global/delayed_quotes/options/TSLA.json" -o reports/probe/tsla_chain.json; ls -l reports/probe/tsla_chain.json
-            curl -sS -m 90 -L "https://cdn.cboe.com/api/global/delayed_quotes/options/_SPX.json" -o reports/probe/spx_chain.json
-          } 2>&1 | tee reports/probe/mk.txt
+            curl -sS -m 60 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=1y&interval=1d" -o reports/probe/y_spx_d.json; wc -c < reports/probe/y_spx_d.json
+            curl -sS -m 60 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=5d&interval=15m&includePrePost=true" -o reports/probe/y_spx_i.json; wc -c < reports/probe/y_spx_i.json
+            curl -sS -m 60 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/ES%3DF?range=5d&interval=15m&includePrePost=true" -o reports/probe/y_es_i.json; wc -c < reports/probe/y_es_i.json
+            curl -sS -m 60 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?range=1mo&interval=1d" -o reports/probe/y_vix_d.json; wc -c < reports/probe/y_vix_d.json
+            curl -sS -m 40 -L "https://cdn.cboe.com/api/global/delayed_quotes/quotes/_SPX.json" -o reports/probe/q_spx.json; head -c 600 reports/probe/q_spx.json
+            curl -sS -m 90 -L "https://cdn.cboe.com/api/global/delayed_quotes/options/_SPX.json" -o reports/probe/spx_chain.json; ls -l reports/probe/spx_chain.json
+          } 2>&1 | tee reports/probe/spx3.txt
       - name: Publish
         if: always()
         run: |
