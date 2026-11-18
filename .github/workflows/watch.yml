@@ -26,4 +26,4 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Watch levels (read-only)
-        run: python tools/watch_levels.py PIEVERSE_USDT '{"tp":[3.37,3.53,3.63],"stop":3.0,"long":true}'
+        run: python tools/watch_levels.py PIEVERSE_USDT '{"tp":[3.63],"stop":3.37,"long":true}'
