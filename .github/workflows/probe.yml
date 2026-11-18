@@ -23,13 +23,10 @@ jobs:
           mkdir -p reports/probe
           {
             UA="Mozilla/5.0"
-            curl -sS -m 60 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=1y&interval=1d" -o reports/probe/y_spx_d.json; wc -c < reports/probe/y_spx_d.json
-            curl -sS -m 60 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=5d&interval=15m&includePrePost=true" -o reports/probe/y_spx_i.json; wc -c < reports/probe/y_spx_i.json
-            curl -sS -m 60 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/ES%3DF?range=5d&interval=15m&includePrePost=true" -o reports/probe/y_es_i.json; wc -c < reports/probe/y_es_i.json
-            curl -sS -m 60 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?range=1mo&interval=1d" -o reports/probe/y_vix_d.json; wc -c < reports/probe/y_vix_d.json
-            curl -sS -m 40 -L "https://cdn.cboe.com/api/global/delayed_quotes/quotes/_SPX.json" -o reports/probe/q_spx.json; head -c 600 reports/probe/q_spx.json
-            curl -sS -m 90 -L "https://cdn.cboe.com/api/global/delayed_quotes/options/_SPX.json" -o reports/probe/spx_chain.json; ls -l reports/probe/spx_chain.json
-          } 2>&1 | tee reports/probe/spx3.txt
+            curl -sS -m 90 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=10y&interval=1d" -o reports/probe/spx_d10.json; wc -c < reports/probe/spx_d10.json
+            curl -sS -m 90 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=730d&interval=1h" -o reports/probe/spx_h730.json; wc -c < reports/probe/spx_h730.json
+            curl -sS -m 90 -L -A "$UA" "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=60d&interval=15m" -o reports/probe/spx_m15.json; wc -c < reports/probe/spx_m15.json
+          } 2>&1 | tee reports/probe/spx4.txt
       - name: Publish
         if: always()
         run: |
