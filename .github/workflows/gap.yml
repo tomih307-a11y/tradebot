@@ -1,0 +1,25 @@
+name: gap-check
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-gap.txt"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Measure
+        run: python3 gap_check.py LUNC_USDT:18:23:00 PHAROS_USDT:19:22:15 BEAT_USDT:19:22:15 AKE_USDT:19:20:15 ARIA_USDT:19:19:30 2>&1 | tee gap.txt
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp gap.txt /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b gap-results
+          git config user.name "bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "gap" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin gap-results
