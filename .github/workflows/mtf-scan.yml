@@ -21,7 +21,7 @@ jobs:
       - name: Live MTF scan (read-only, no orders)
         run: |
           mkdir -p reports/mtf_scan
-          { python tools/coin_ta.py PIPPIN_USDT; echo; python -m tradebot.strategies.mtf_entry.paper detail PIPPIN_USDT; echo; python -m tradebot.strategies.mtf_entry.boom_watch coin PIPPIN_USDT; } 2>&1 | tee reports/mtf_scan/pippin_ta.txt
+          python -m tradebot.strategies.mtf_entry.live_pick reports/mtf_scan/live_pick.txt 2>&1 | tail -80
       - name: Publish
         if: always()
         run: |
