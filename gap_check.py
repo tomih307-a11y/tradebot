@@ -36,8 +36,9 @@ for spec in sys.argv[1:]:
     want = datetime(2026, 11, int(dd), int(hh), int(mm), tzinfo=timezone.utc) - timedelta(hours=TZ)
     cross = min((i for i in range(1, len(c)) if pmo[i - 1] <= 0 < pmo[i]), key=lambda i: abs(t[i] - want.timestamp()))
     last = None
-    for i in range(cross, max(cross - 400, 0), -1):                     # walk back: last bar whose candle overlapped an alive bullish OB
-        if any(ob["bias"] == 1 and l[i] <= ob["hi"] and h[i] >= ob["lo"] for ob in snaps[i]):
+    alive_now = [ob for ob in snaps[cross] if ob["bias"] == 1]          # bullish OBs alive AT the zero-touch bar (an OB forms from its own candle, after the break)
+    for i in range(cross, max(cross - 400, 0), -1):                     # walk back: last candle that overlapped one of them
+        if any(l[i] <= ob["hi"] and h[i] >= ob["lo"] for ob in alive_now):
             last = i
             break
     if last is None:
