@@ -224,3 +224,13 @@ def test_alert_log_merge_and_summary():
     m = AL.merge_new([a], [b, c])
     assert len(m) == 2 and m[1]["bar_time"] == "2"                    # duplicate (bar, sym, tier) not re-added
     assert "محسوم 1 من 2" in AL.summarize(m) and "T1 100.0% (1)" in AL.summarize(m)
+
+
+def test_ma_clean_flags_and_episodes():
+    import numpy as np
+    from tradebot.strategies.mtf_entry import ma_clean as MC
+    c = 100 * np.cumprod(1 + np.full(400, 0.002))            # steady uptrend: full stack from ~bar 250 on
+    m1, m2, m3 = MC.ma_flags(c)
+    assert m1[-1] and m2[-1] and not m1[:50].any()
+    ep = MC.episodes(np.array([0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1], bool))
+    assert ep == [1, 13]                                       # cooldown of 8 bars between alerts
