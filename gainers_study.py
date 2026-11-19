@@ -17,7 +17,15 @@ def kl(sym, itv, days, now):
     a = now - days * 86400
     while a < now:
         b = min(a + SEC[itv] * 1000, now)
-        d = S.get(f"https://contract.mexc.com/api/v1/contract/kline/{sym}?interval={itv}&start={a}&end={b}")["data"]
+        d = None
+        for r in range(5):
+            try:
+                d = S.get(f"https://contract.mexc.com/api/v1/contract/kline/{sym}?interval={itv}&start={a}&end={b}")["data"]
+                break
+            except Exception:
+                time.sleep(2 + 2 * r)
+        if d is None:
+            raise RuntimeError(f"{sym} {itv}")
         for k in out:
             out[k] += d[k]
         a = b
@@ -46,6 +54,14 @@ def tag(x):
 
 
 def study(item):
+    try:
+        return study0(item)
+    except Exception as e:
+        print("تخطّي", item[0], e)
+        return None
+
+
+def study0(item):
     sym, chg, vol, fund = item
     now = int(time.time())
     d15, d1, d4, dd = kl(sym, "Min15", 14, now), kl(sym, "Min60", 40, now), kl(sym, "Hour4", 150, now), kl(sym, "Day1", 250, now)
@@ -74,7 +90,7 @@ def main():
             and S.is_crypto(detail[x["symbol"]]) and float(x.get("amount24") or 0) >= 1_000_000 and not x["symbol"][:-5].endswith("STOCK")]
     tick.sort(key=lambda x: -float(x.get("riseFallRate") or 0))
     top = [(x["symbol"], float(x["riseFallRate"]) * 100, float(x["amount24"]) / 1e6, float(x.get("fundingRate") or 0) * 100) for x in tick[:14]]
-    with ThreadPoolExecutor(5) as ex:
+    with ThreadPoolExecutor(3) as ex:
         res = [r for r in ex.map(study, top) if r]
     for r in res:
         print(f"== {r['sym']} · 24س {r['chg']:+.1f}% · حجم {r['vol']:.1f}M · تمويل {r['fund']:+.3f}%")
