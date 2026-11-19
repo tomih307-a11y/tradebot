@@ -9,11 +9,11 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: python3 liquidity_test.py 2>&1 | tee scan.txt | tail -150
+        run: python3 liquidity_test2.py 2>&1 | tee scan.txt | tail -150
       - name: Publish
         if: always()
         run: |
