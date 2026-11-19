@@ -104,7 +104,7 @@ def work(sym):
         bulls = [ob for ob in snaps[i] if ob["bias"] == 1]
         inside = any(ob["lo"] <= c[i] <= ob["hi"] for ob in bulls)
         near = any(ob["hi"] < c[i] <= ob["hi"] * 1.03 for ob in bulls)
-        base = st.median(vo[i - 960:i - 8]) or 1e-12                                # median volume of the previous ~10 days
+        base = st.median(vo[max(0, i - 960):i - 8]) or 1e-12                                # median volume of the previous ~10 days
         vm = max(vo[i - 7:i + 1]) / base                                            # biggest 15m volume in the last 2 hours (x median)
         vt = vo[i] / base
         extra = {"vm": vm, "vt": vt, "tema": c[i] > te[i], "m15": m15[i] > g15[i], "ob_in": inside, "ob_near": inside or near}
