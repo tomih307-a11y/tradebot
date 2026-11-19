@@ -1,0 +1,26 @@
+name: chart-lunc
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-chart.txt"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install matplotlib
+      - name: Draw chart
+        run: python3 chart_lunc.py
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp lunc_chart.png chart.txt /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b chart-results
+          git config user.name "bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "chart" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin chart-results
