@@ -16,7 +16,17 @@ TZ = 4
 
 
 def get(url):
-    return json.load(urllib.request.urlopen(url, timeout=60))
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+    return json.load(urllib.request.urlopen(req, timeout=60))
+
+
+NON_SPOT = {"BINANCETICKER", "KAIKO", "ALLTICK", "INFOWAYCOMMON", "LIGHTER", "HYPERLIQUID"}
+
+
+def is_crypto(detail):
+    """Crypto = has at least one SPOT price source (MEXC, BINANCE, BITGET...), and is not a commodity-style name like GOLD(PAXG)."""
+    spot = [o for o in detail.get("indexOrigin") or [] if not o.endswith("_FUTURE") and o not in NON_SPOT]
+    return bool(spot) and "(" not in (detail.get("baseCoinName") or "")
 
 
 def kl(sym, itv, days, now):
@@ -104,8 +114,9 @@ def analyse(sym, now, hours_back):
 def main():
     hours = float(sys.argv[1]) if len(sys.argv) > 1 else 6
     now = int(time.time())
-    tick = [x for x in get("https://contract.mexc.com/api/v1/contract/ticker")["data"] if x["symbol"].endswith("_USDT") and not x["symbol"].endswith("STOCK_USDT")
-            and float(x.get("amount24") or 0) >= 1_000_000]
+    detail = {d["symbol"]: d for d in get("https://contract.mexc.com/api/v1/contract/detail")["data"]}
+    tick = [x for x in get("https://contract.mexc.com/api/v1/contract/ticker")["data"] if x["symbol"].endswith("_USDT") and x["symbol"] in detail
+            and is_crypto(detail[x["symbol"]]) and float(x.get("amount24") or 0) >= 1_000_000]
     res, errs = [], 0
     for x in tick:
         try:
@@ -116,13 +127,13 @@ def main():
     f = lambda tt: (datetime.fromtimestamp(tt, timezone.utc) + timedelta(hours=TZ)).strftime("%d %H:%M")
     mk = lambda b: "✓" if b else "✗"
     allp = [r for r in res if r["ob"] and r["macd"] and r["tema"]]
-    lines = [f"ماسح v1 (لونج) · {len(tick)} عقداً (سيولة ≥ 1M) · آخر {hours:g} ساعات · {datetime.fromtimestamp(now, timezone.utc) + timedelta(hours=TZ):%d %b %H:%M} (UTC+4) · أخطاء جلب: {errs}", "",
+    lines = [f"ماسح v1 (لونج، كريبتو فقط) · {len(tick)} عقداً (سيولة ≥ 1M) · آخر {hours:g} ساعات · {datetime.fromtimestamp(now, timezone.utc) + timedelta(hours=TZ):%d %b %H:%M} (UTC+4) · أخطاء جلب: {errs}", "",
              f"لمسات PMO للصفر صعوداً على 15 دقيقة: {len(res)} · داخل أوردر بلوك: {sum(r['ob'] for r in res)} · المكدي صاعد: {sum(r['macd'] for r in res)} · فوق TEMA50: {sum(r['tema'] for r in res)} · **كل الشروط الأربعة: {len(allp)}**", ""]
-    hdr = f"{'العملة':<14}{'الوقت':<12}{'منذ(د)':>7}  OB MACD TEMA  {'4س':<18}{'يومي':<18} سعر"
+    hdr = f"{'للبحث في TV':<16}{'الوقت':<12}{'منذ(د)':>7}  OB MACD TEMA  {'4س':<18}{'يومي':<18} سعر"
     lines += ["== كل الشروط متحققة ==", hdr] + [row for row in []]
     def fmt(r):
         stop = f" · وقف (أدنى OB) {r['ob_zone'][0]:.6g}" if r["ob_zone"] else ""
-        return f"{r['sym']:<14}{f(r['t']):<12}{r['age']:>7.0f}  {mk(r['ob']):^2}  {mk(r['macd']):^3}  {mk(r['tema']):^3}   {r['f4']:<18}{r['fd']:<18} {r['px']:.6g}{stop}"
+        return f"{r['sym'].replace('_', '') + '.P':<16}{f(r['t']):<12}{r['age']:>7.0f}  {mk(r['ob']):^2}  {mk(r['macd']):^3}  {mk(r['tema']):^3}   {r['f4']:<18}{r['fd']:<18} {r['px']:.6g}{stop}"
     lines += [fmt(r) for r in sorted(allp, key=lambda r: r["age"])] or ["  لا شيء"]
     near = [r for r in res if sum((r["ob"], r["macd"], r["tema"])) == 2 and not (r["ob"] and r["macd"] and r["tema"])]
     lines += ["", "== شرطان من ثلاثة (قريبة) ==", hdr] + [fmt(r) for r in sorted(near, key=lambda r: r["age"])[:25]]
