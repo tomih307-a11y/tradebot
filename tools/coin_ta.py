@@ -16,6 +16,13 @@ def rsi(c, n=14):
     return 100 - 100 / (1 + ag / al) if al else 100.0
 
 
+def _ema(x, n):
+    a, e = 2 / (n + 1), x[0]
+    for v in x:
+        e = a * v + (1 - a) * e
+    return float(e)
+
+
 def main():
     from tradebot.config import load_config
     from tradebot.data.klines import drop_unclosed, fetch_range
@@ -32,7 +39,7 @@ def main():
         if len(c) < 70:
             print(tf, "بيانات قليلة", len(c)); continue
         m = {n: c[-n:].mean() for n in (5, 10, 30, 60)}
-        ema = lambda n: float(__import__("pandas").Series(c).ewm(span=n, adjust=False).mean().iloc[-1])
+        ema = lambda n: _ema(c, n)
         tr = np.maximum(h[1:] - l[1:], np.maximum(abs(h[1:] - c[:-1]), abs(l[1:] - c[:-1])))
         atr = tr[-14:].mean()
         w = 48 if tf in ("Min60", "Min15") else 30
