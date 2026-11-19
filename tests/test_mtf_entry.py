@@ -245,3 +245,16 @@ def test_ob_hourly_aggregation_and_state():
     assert len(th) == 3 and th[0] == 3600 and oh[0] == o[0] and ch[0] == c[3] and abs(hh[0] - h[:4].max()) < 1e-9
     near, first = OE.ob_state(5, t, h, l, c, th, oh, hh, lh, ch, [], np.full(3, 1.0))
     assert (near, first) == (False, False)                         # no structure event -> no OB
+
+
+def test_trail_exit_ratchets_up_only():
+    import numpy as np
+    from tradebot.strategies.mtf_entry import trail_exit as TE
+    n = TE.HMAX + 5
+    c = np.full(n, 100.0); o = c.copy(); h = c.copy(); l = c.copy()
+    h[1] = 110.0; l[1] = 100.0                      # rally to 110
+    o[2] = 110.0; h[2] = 110.0; l[2] = 99.0         # opens above the stop; stop = 110-5 = 105 -> exit at 105 on bar 2
+    r = TE.trail_trade(o, h, l, c, 0, 5.0)
+    assert r is not None and r[2] == 2 and abs(r[3] - 105.0) < 1e-9
+    assert abs(r[0] - ((105 - 100) / 5 - TE.COST * 100 / 5)) < 1e-9
+    assert TE.trail_trade(o, h, l, c, n - 3, 5.0) is None       # not enough future bars
