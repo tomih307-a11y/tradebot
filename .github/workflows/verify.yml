@@ -1,0 +1,25 @@
+name: verify-pmo
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-verify.txt"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run check
+        run: python3 verify_pmo.py 2>&1 | tee out.txt
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp out.txt /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b verify-results
+          git config user.name "bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "verify" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin verify-results
