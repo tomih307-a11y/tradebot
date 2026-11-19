@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: python3 gainers_study.py 2>&1 | tee scan.txt | tail -150
+        run: python3 liquidity_test4.py 2>&1 | tee scan.txt | tail -150
       - name: Publish
         if: always()
         run: |
