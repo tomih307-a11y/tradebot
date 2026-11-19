@@ -21,7 +21,7 @@ jobs:
       - name: Live MTF scan (read-only, no orders)
         run: |
           mkdir -p reports/mtf_scan
-          { python tools/level_status.py VELVET_USDT 1795088760 0.07143 0.0695 99999 long; echo; python tools/level_status.py BLESS_USDT 1795088760 0.011124 0.0108572 99999 long; echo; python tools/level_status.py BNB_USDT 1795088760 593.56 588.987 99999 long; echo; python tools/level_status.py TIA_USDT 1795088760 0.3553 0.349175 99999 long; echo; python tools/level_status.py IRYS_USDT 1795081800 0.0232 0.0203 99999 long; echo; python tools/level_status.py LUNC_USDT 1795081800 4.739e-05 4.37e-05 99999 long; } 2>&1 | tee reports/mtf_scan/status3.txt
+          { python tools/resim_trail.py VELVET_USDT 1795088760 0.07143 0.00443; python tools/resim_trail.py BLESS_USDT 1795088760 0.011124 0.000679; python tools/resim_trail.py TIA_USDT 1795088760 0.3553 0.006125; python tools/resim_trail.py BNB_USDT 1795088760 593.56 5.4; python tools/resim_trail.py TAO_USDT 1795091160 196.5 2.4; python tools/resim_trail.py IRYS_USDT 1795081800 0.0232 0.0029; python tools/resim_trail.py LUNC_USDT 1795081800 4.739e-05 3.7e-06; } 2>&1 | tee reports/mtf_scan/resim.txt
       - name: Publish
         if: always()
         run: |

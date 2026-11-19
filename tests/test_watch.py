@@ -17,3 +17,11 @@ def test_trail_step_ratchets_and_hits():
     hit, stop2, hh2 = trail_step(hh, stop, 108.0, 106.0, 5.0, 95.0)
     assert (hit, stop2, hh2) == (False, 105.0, 110.0)             # stop never falls
     assert trail_step(hh, stop, 109.0, 104.0, 5.0, 95.0)[0] is True   # low touches the stop
+
+
+def test_resim_trail_hit_and_open():
+    from tools.resim_trail import simulate
+    st, stop, hh, te, px = simulate([(1, 101, 99.5), (2, 106, 100), (3, 105, 100.5)], 100.0, 4.0)
+    assert st == "سارية" and hh == 106 and stop == 102.0
+    st, stop, hh, te, px = simulate([(1, 101, 99.5), (2, 106, 100), (3, 105, 101.9)], 100.0, 4.0)
+    assert st == "ضُرب" and te == 3 and px == 102.0
