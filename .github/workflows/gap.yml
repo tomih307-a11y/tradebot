@@ -13,11 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Measure
-        run: python3 frames_check.py LUNC_USDT:18:23:00 PHAROS_USDT:19:22:15 BEAT_USDT:19:22:15 AKE_USDT:19:20:15 ARIA_USDT:19:19:30 2>&1 | tee frames.txt
+        run: python3 frames_check2.py LUNC_USDT:18:23:00 PHAROS_USDT:19:22:15 BEAT_USDT:19:22:15 AKE_USDT:19:20:15 ARIA_USDT:19:19:30 2>&1 | tee frames2.txt
       - name: Publish
         if: always()
         run: |
-          mkdir /tmp/out && cp frames.txt /tmp/out/ 2>/dev/null || true
+          mkdir /tmp/out && cp frames2.txt /tmp/out/ 2>/dev/null || true
           cd /tmp/out && git init -q && git checkout -q -b gap-results
           git config user.name "bot" && git config user.email "bot@example.com"
           git add -A && git commit -q -m "frames" || true
