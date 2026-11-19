@@ -1,6 +1,7 @@
 import json
 import urllib.request
-d = json.load(urllib.request.urlopen("https://contract.mexc.com/api/v1/contract/detail", timeout=60))["data"]
+req = urllib.request.Request("https://contract.mexc.com/api/v1/contract/detail", headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+d = json.load(urllib.request.urlopen(req, timeout=60))["data"]
 by = {x["symbol"]: x for x in d}
 print("total contracts:", len(d))
 print("keys:", sorted(d[0].keys()))
