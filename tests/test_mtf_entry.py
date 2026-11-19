@@ -265,3 +265,19 @@ def test_ob_scan_symbol_returns_none_without_structure():
     from tradebot.strategies.mtf_entry import ob_scan as OS
     a = np.full(300, 100.0)
     assert OS.scan_symbol(a, a + 0.5, a - 0.5, a, 100.0, a[:80], a[:80] + 0.5, a[:80] - 0.5, a[:80]) is None
+
+
+def test_quality_scan_indicators_and_trade():
+    import numpy as np
+    from tradebot.strategies.mtf_entry import quality_scan as QS
+    c = 100 + np.arange(200) * 0.1
+    assert abs(QS.ema(c, 20)[-1] - c[-1]) < 2.5 and QS.rsi(c)[-1] > 99                       # steady uptrend
+    th = np.arange(1, 241) * 3600.0
+    o = np.arange(240) + 100.0; cc = o + 0.5; h = cc + 0.2; l = o - 0.2
+    t4, o4, h4, l4, c4 = QS.four_hour(th, o, h, l, cc)
+    assert len(t4) == 60 and t4[0] == 14400 and abs(c4[0] - cc[3]) < 1e-9
+    c2 = np.full(100, 100.0); h2 = c2.copy(); l2 = c2.copy(); o2 = c2.copy()
+    h2[1] = 110.0; o2[2] = 110.0; l2[2] = 100.0; l2[3] = 90.0                                               # rally then crash: exits at highest-dist
+    r = QS.trade(o2, h2, l2, c2, 0, 5.0)
+    assert r is not None and abs(r - ((105 - 100) / 5 - QS.COST * 100 / 5)) < 1e-9
+    assert QS.setup_risk(100.0, 99.0, 2.0) == max(100.0 - (99.0 - 0.5), 2.0)
