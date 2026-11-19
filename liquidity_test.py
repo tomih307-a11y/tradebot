@@ -38,9 +38,13 @@ def frame(times, closes, period, tc, price):
     h = [a - b for a, b in zip(ml, sg)]
     n = len(series) - 1
     macd_ok = h[n] > 0 or h[n] > h[n - 1]
+    green = h[n] > 0 or any(ml[k - 1] <= sg[k - 1] and ml[k] > sg[k] for k in range(n - 2, n + 1))    # strict: green hist, or bullish cross in last 3 candles
     gap, gp = p[n] - s[n], p[n - 1] - s[n - 1]
     pmo_ok = gap > 0 or (p[n] > p[n - 1] and gap > gp)
-    return {"macd": macd_ok, "pmo": pmo_ok, "ok": macd_ok or pmo_ok, "rise2": p[n] > p[n - 2]}
+    return {"green": green, "macd": macd_ok, "pmo": pmo_ok, "ok": macd_ok or pmo_ok, "rise2": p[n] > p[n - 2]}
+
+
+BTC = {}
 
 
 def work(sym):
@@ -74,44 +78,80 @@ def work(sym):
                     first = 1; break
                 if lo[j] <= ent * 0.97:
                     first = -1; break
-        out.append({"sym": sym, "t": t[i], "f1": f1, "f4": f4, "pass": f1["ok"] and f4["ok"] and f4["rise2"], "up": up, "dn": dn, "first": first, "fwd": fwd})
+        b = BTC.get(t[i])
+        out.append({"sym": sym, "t": t[i], "f1": f1, "f4": f4, "loose": f1["ok"] and f4["ok"] and f4["rise2"], "pass": f1["green"] and f4["green"], "pass2": f1["green"] and f4["green"] and f4["rise2"], "btc": b, "up": up, "dn": dn, "first": first, "fwd": fwd})
     return out
 
 
 def report(name, rows):
-    rows = [r for r in rows if r["fwd"]]
-    if not rows:
-        print(f"{name:28s} 0")
+    raw = [r for r in rows if r["fwd"]]
+    if not raw:
+        print(f"{name:34s} 0")
         return
-    ups, dns = [r["up"] for r in rows], [r["dn"] for r in rows]
-    a = sum(1 for r in rows if r["first"] == 1) / len(rows) * 100
-    b = sum(1 for r in rows if r["first"] == -1) / len(rows) * 100
-    print(f"{name:28s} {len(rows):5d}   وسيط أعلى صعود 12س {st.median(ups):+6.2f}%   وسيط أعمق هبوط {st.median(dns):+6.2f}%   +3% أولاً {a:4.1f}%   -3% أولاً {b:4.1f}%")
+    ups, dns = [r["up"] for r in raw], [r["dn"] for r in raw]
+    a = sum(1 for r in raw if r["first"] == 1) / len(raw) * 100
+    b = sum(1 for r in raw if r["first"] == -1) / len(raw) * 100
+    slots = {}                                                       # one vote per 15m time slot (touches in the same slot share the market move)
+    for r in raw:
+        slots.setdefault(r["t"], []).append(r)
+    sa = st.mean(sum(1 for x in v if x["first"] == 1) / len(v) for v in slots.values()) * 100
+    sb = st.mean(sum(1 for x in v if x["first"] == -1) / len(v) for v in slots.values()) * 100
+    su = st.mean(st.mean(x["up"] for x in v) for v in slots.values())
+    sd = st.mean(st.mean(x["dn"] for x in v) for v in slots.values())
+    print(f"{name:34s} {len(raw):5d} لمسة | وسيط صعود {st.median(ups):+5.2f}% هبوط {st.median(dns):+5.2f}% | +3% أولاً {a:4.1f}% -3% أولاً {b:4.1f}% || {len(slots):4d} وقت: متوسط صعود {su:+5.2f}% هبوط {sd:+5.2f}% | +3% {sa:4.1f}% -3% {sb:4.1f}%")
+
+
+ETF = {"SOXL", "SOXS", "MUU", "MVLL", "DRAM", "SKHY", "QQQ", "SPY", "TQQQ", "SQQQ", "TSLL", "NVDL", "MSTU", "CONL", "SPCX"}
+
+
+def ok_name(sym):
+    base = sym[:-5]
+    return not (base.endswith("STOCK") or base in ETF)
+
+
+def btc_load():
+    now = int(time.time())
+    k15, k60, k4 = kline("BTC_USDT", "Min15", now), kline("BTC_USDT", "Min60", now), kline("BTC_USDT", "Hour4", now)
+    for i in range(len(k15[0])):
+        tc = k15[0][i] + 900
+        if tc > now:
+            continue
+        f1, f4 = frame(k60[0], k60[3], 3600, tc, k15[3][i]), frame(k4[0], k4[3], 14400, tc, k15[3][i])
+        if f1 and f4:
+            BTC[k15[0][i]] = f1["green"] and f4["green"]
 
 
 def main():
     detail = {d["symbol"]: d for d in S.get("https://contract.mexc.com/api/v1/contract/detail")["data"]}
     tick = [x["symbol"] for x in S.get("https://contract.mexc.com/api/v1/contract/ticker")["data"] if x["symbol"].endswith("_USDT") and x["symbol"] in detail
             and S.is_crypto(detail[x["symbol"]]) and float(x.get("amount24") or 0) >= 1_000_000]
-    print(f"عملات مفحوصة: {len(tick)} · آخر 14 يوماً · دخول = إغلاق شمعة لمس الصفر · التوقيت UTC+{TZ}\n")
+    removed = [x for x in tick if not ok_name(x)]
+    tick = [x for x in tick if ok_name(x)]
+    btc_load()
+    print(f"عملات مفحوصة: {len(tick)} (استُبعد {len(removed)} سهماً/صندوقاً) · آخر 14 يوماً · دخول = إغلاق شمعة لمس الصفر · التوقيت UTC+{TZ}")
+    print("المفحوصة:", " ".join(x[:-5] for x in tick), "\n")
     with ThreadPoolExecutor(6) as ex:
         rows = [r for part in ex.map(work, tick) for r in part]
-    print(f"{'المجموعة':28s} {'لمسات':>5s}")
+    print("الشرط الصارم = المكدي أخضر أو تقاطع صاعد حديث (آخر 3 شموع) على الساعة والأربع ساعات معاً")
+    print("بيتكوين OK = نفس الشرط على بيتكوين لحظة اللمس\n")
     report("كل اللمسات", rows)
-    report("مرّت بالشرط الكامل", [r for r in rows if r["pass"]])
-    report("لم تمرّ", [r for r in rows if not r["pass"]])
+    report("الشرط الصارم: مرّت", [r for r in rows if r["pass"]])
+    report("الشرط الصارم: لم تمرّ", [r for r in rows if not r["pass"]])
+    report("الصارم + 4س PMO صاعد: مرّت", [r for r in rows if r["pass2"]])
+    report("الصارم + 4س PMO صاعد: لم تمرّ", [r for r in rows if not r["pass2"]])
     print()
-    report("الساعة OK فقط", [r for r in rows if r["f1"]["ok"]])
-    report("الساعة غير OK", [r for r in rows if not r["f1"]["ok"]])
-    report("4س OK فقط", [r for r in rows if r["f4"]["ok"]])
-    report("4س غير OK", [r for r in rows if not r["f4"]["ok"]])
-    report("4س PMO صاعد", [r for r in rows if r["f4"]["rise2"]])
-    report("4س PMO غير صاعد", [r for r in rows if not r["f4"]["rise2"]])
-    print("\nلمسات آخر 36 ساعة (مباشر):")
+    for bk, bn in ((True, "بيتكوين OK"), (False, "بيتكوين غير OK")):
+        report(f"{bn} · العملة مرّت", [r for r in rows if r["btc"] is bk and r["pass"]])
+        report(f"{bn} · العملة لم تمرّ", [r for r in rows if r["btc"] is bk and not r["pass"]])
+    print()
+    report("1س أخضر", [r for r in rows if r["f1"]["green"]])
+    report("1س غير أخضر", [r for r in rows if not r["f1"]["green"]])
+    report("4س أخضر", [r for r in rows if r["f4"]["green"]])
+    report("4س غير أخضر", [r for r in rows if not r["f4"]["green"]])
+    print("\nلمسات آخر 36 ساعة (مباشر) التي مرّت بالصارم + 4س صاعد:")
     now = time.time()
-    for r in sorted((r for r in rows if now - r["t"] < 36 * 3600), key=lambda r: r["t"]):
-        f1, f4 = r["f1"], r["f4"]
-        print(f"  {dt(r['t']):%d %H:%M} {r['sym']:18s} {'مرّت' if r['pass'] else 'لا'}  | 1س مكدي {'✓' if f1['macd'] else '✗'} pmo {'✓' if f1['pmo'] else '✗'} | 4س مكدي {'✓' if f4['macd'] else '✗'} pmo {'✓' if f4['pmo'] else '✗'} صاعد {'✓' if f4['rise2'] else '✗'}")
+    for r in sorted((r for r in rows if now - r["t"] < 36 * 3600 and r["pass2"]), key=lambda r: r["t"]):
+        print(f"  {dt(r['t']):%d %H:%M} {r['sym']:18s} بيتكوين {'OK' if r['btc'] else 'لا'}")
     json.dump(rows, open("liquidity_rows.json", "w"))
 
 
