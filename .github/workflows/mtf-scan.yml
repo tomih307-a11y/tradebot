@@ -21,7 +21,16 @@ jobs:
       - name: Live MTF scan (read-only, no orders)
         run: |
           mkdir -p reports/mtf_scan
-          python tools/level_status.py VELVET_USDT 1795088760 0.07143 0.0695 0.0800 long 2>&1 | tee reports/mtf_scan/velvet.txt
+          python - <<'PY' 2>&1 | tee reports/mtf_scan/velvet_path.txt
+          import sys, time
+          sys.path.insert(0, '.')
+          from tradebot.config import load_config
+          from tradebot.mexc.client import MexcClient
+          cl = MexcClient(load_config('config.toml').mexc)
+          k = cl.klines('VELVET_USDT', 'Min1', 1795088280, int(time.time()))
+          for t, o, h, l, c in zip(k['time'], k['open'], k['high'], k['low'], k['close']):
+              print(time.strftime('%H:%M', time.gmtime(t)), o, h, l, c)
+          PY
       - name: Publish
         if: always()
         run: |
