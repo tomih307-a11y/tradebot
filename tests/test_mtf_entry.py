@@ -258,3 +258,10 @@ def test_trail_exit_ratchets_up_only():
     assert r is not None and r[2] == 2 and abs(r[3] - 105.0) < 1e-9
     assert abs(r[0] - ((105 - 100) / 5 - TE.COST * 100 / 5)) < 1e-9
     assert TE.trail_trade(o, h, l, c, n - 3, 5.0) is None       # not enough future bars
+
+
+def test_ob_scan_symbol_returns_none_without_structure():
+    import numpy as np
+    from tradebot.strategies.mtf_entry import ob_scan as OS
+    a = np.full(300, 100.0)
+    assert OS.scan_symbol(a, a + 0.5, a - 0.5, a, 100.0, a[:80], a[:80] + 0.5, a[:80] - 0.5, a[:80]) is None
