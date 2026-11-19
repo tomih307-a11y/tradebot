@@ -234,3 +234,14 @@ def test_ma_clean_flags_and_episodes():
     assert m1[-1] and m2[-1] and not m1[:50].any()
     ep = MC.episodes(np.array([0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1], bool))
     assert ep == [1, 13]                                       # cooldown of 8 bars between alerts
+
+
+def test_ob_hourly_aggregation_and_state():
+    import numpy as np
+    from tradebot.strategies.mtf_entry import ob_entry as OE
+    t = np.arange(0, 3600 * 3, 900, dtype=float)                 # 12 bars = 3 full hours
+    o = np.arange(12) + 100.0; c = o + 0.5; h = c + 0.2; l = o - 0.2
+    th, oh, hh, lh, ch = OE.hourly(t, o, h, l, c)
+    assert len(th) == 3 and th[0] == 3600 and oh[0] == o[0] and ch[0] == c[3] and abs(hh[0] - h[:4].max()) < 1e-9
+    near, first = OE.ob_state(5, t, h, l, c, th, oh, hh, lh, ch, [], np.full(3, 1.0))
+    assert (near, first) == (False, False)                         # no structure event -> no OB
