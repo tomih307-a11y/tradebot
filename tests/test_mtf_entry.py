@@ -281,3 +281,18 @@ def test_quality_scan_indicators_and_trade():
     r = QS.trade(o2, h2, l2, c2, 0, 5.0)
     assert r is not None and abs(r - ((105 - 100) / 5 - QS.COST * 100 / 5)) < 1e-9
     assert QS.setup_risk(100.0, 99.0, 2.0) == max(100.0 - (99.0 - 0.5), 2.0)
+
+
+def test_quality_log_dedupe_cooldown_and_summary():
+    from tradebot.strategies.mtf_entry import quality_log as QL
+    base = dict(sym="X_USDT", dir="L", tier="A", px="1", dist="0.1", comps="1111111", turn24="1", logged_at="0", resolved="", R="")
+    a = dict(base, bar_time="3600")
+    dup = dict(base, bar_time="3600")
+    near = dict(base, bar_time=str(3600 * 4))                      # within 8h cooldown -> skipped
+    far = dict(base, bar_time=str(3600 * 12))
+    b = dict(base, bar_time=str(3600 * 4), tier="BASE")             # base rows are exempt from the cooldown
+    rows = QL.add_new([], [a, dup, near, far, b])
+    assert [(r["bar_time"], r["tier"]) for r in rows] == [("3600", "A"), (str(3600 * 4), "BASE"), (str(3600 * 12), "A")]
+    rows[0].update(resolved="1", R="0.5"); rows[1].update(resolved="1", R="-0.2")
+    s = QL.summarize(rows)
+    assert "محسوم 2 من 3" in s and "أساس: -0.200 (1)" in s and "A: 1 إشارة" in s

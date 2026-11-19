@@ -17,7 +17,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -34,6 +34,8 @@ jobs:
           git clone -q --depth 1 --branch alert-log "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/alertlog 2>/dev/null || { mkdir /tmp/alertlog && cd /tmp/alertlog && git init -q && git checkout -q -b alert-log && git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"; }
       - name: Scan and resolve (read-only)
         run: python -m tradebot.strategies.mtf_entry.alert_log /tmp/alertlog
+      - name: Quality scanner forward log (read-only)
+        run: python -m tradebot.strategies.mtf_entry.quality_log /tmp/alertlog
       - name: Publish
         run: |
           cd /tmp/alertlog && git config user.name "alert-bot" && git config user.email "bot@example.com"
