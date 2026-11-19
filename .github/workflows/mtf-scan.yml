@@ -21,7 +21,7 @@ jobs:
       - name: Live MTF scan (read-only, no orders)
         run: |
           mkdir -p reports/mtf_scan
-          python -m tradebot.strategies.mtf_entry.quality_scan 120 reports/mtf_scan/quality_short.txt short 2>&1 | tail -80
+          python tools/audit_tests.py 2>&1 | tail -40
       - name: Publish
         if: always()
         run: |
