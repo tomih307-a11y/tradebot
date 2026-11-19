@@ -214,3 +214,13 @@ def test_immediate_move_label_and_filters():
     assert IM.clean_label(h, l, c, 30) is None       # not enough future bars
     f = dict(L=True, P=True, A=False, U=True)
     assert IM.passes(f, "L+P") and not IM.passes(f, "L+P+A")
+
+
+def test_alert_log_merge_and_summary():
+    from tradebot.strategies.mtf_entry import alert_log as AL
+    a = dict(bar_time="1", sym="X_USDT", tier="0", resolved="1", clean="1", L="1")
+    b = dict(bar_time="1", sym="X_USDT", tier="0", resolved="", clean="", L="1")
+    c = dict(bar_time="2", sym="X_USDT", tier="1", resolved="", clean="", L="0")
+    m = AL.merge_new([a], [b, c])
+    assert len(m) == 2 and m[1]["bar_time"] == "2"                    # duplicate (bar, sym, tier) not re-added
+    assert "محسوم 1 من 2" in AL.summarize(m) and "T1 100.0% (1)" in AL.summarize(m)
