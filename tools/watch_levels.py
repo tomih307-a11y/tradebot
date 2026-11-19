@@ -79,12 +79,23 @@ def main():
                 continue
             try:
                 now = int(time.time())
-                k = cl.klines(sym, "Min1", now - 240, now)
+                k = cl.klines(sym, "Min1", min(now - 240, v.get("last_t", now) - 60), now)
                 px = cl.last_price(sym)
                 hi = max(list(k.get("high", [])) + [px]); lo = min(list(k.get("low", [])) + [px])
                 v["px"] = px
-                if "trail" in v["sp"]:                                   # open target + trailing stop
-                    hit, v["stop"], v["hh"] = trail_step(v["hh"], v["stop"], hi, lo, v["sp"]["trail"], v["sp"]["stop0"])
+                if "trail" in v["sp"]:                                   # open target + trailing stop: closed 1m candles in ORDER (no window mixing)
+                    cur = now // 60 * 60
+                    last = v.setdefault("last_t", cur - 60)
+                    hit = False
+                    for ti, hi_, lo_ in sorted(zip(k.get("time", []), k.get("high", []), k.get("low", []))):
+                        if last < ti < cur:
+                            hit, v["stop"], v["hh"] = trail_step(v["hh"], v["stop"], hi_, lo_, v["sp"]["trail"], v["sp"]["stop0"])
+                            last = ti
+                            if hit:
+                                break
+                    v["last_t"] = last
+                    if not hit:
+                        hit, v["stop"], v["hh"] = trail_step(v["hh"], v["stop"], px, px, v["sp"]["trail"], v["sp"]["stop0"])
                     if hit:
                         events.append(f"{stamp()} · {sym} · الوقف المتحرك لُمس عند {v['stop']:.6g} (أعلى سعر {v['hh']:.6g}) · السعر الآن {px}")
                         v["done"] = True; pushed = True
