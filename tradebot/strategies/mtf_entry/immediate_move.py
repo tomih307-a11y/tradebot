@@ -53,6 +53,8 @@ def main():
     cl, now = MexcClient(load_config("config.toml").mexc), int(time.time())
     tick = [t for t in cl.tickers() if str(t.get("symbol", "")).endswith("_USDT") and not t["symbol"].endswith("STOCK_USDT")
             and t["symbol"] not in NON_CRYPTO and float(t.get("amount24") or 0) >= 300_000]
+    kb = drop_unclosed(fetch_range(cl, "BTC_USDT", "Min15", int(now // 900 * 900) - (days + 3) * 96 * 900, now), "Min15", now)
+    tb, cb = np.asarray(kb["time"], float), np.asarray(kb["close"], float)
     rows, live, nsym, crows = [], [], 0, []
     for tk in tick:
         sym = tk["symbol"]
@@ -75,6 +77,8 @@ def main():
             if kk > 2 or i < 100 or np.isnan(a15[i]):
                 continue
             ft = alert_features(c, amt, a15, i)
+            ib = int(np.searchsorted(tb, t[i], side="right")) - 1
+            ft["M"] = bool(ib >= 96 and cb[ib] / cb[ib - 96] - 1 >= 0)
             lab = clean_label(h, l, c, i)
             j = i + 1
             if j < n and c[j] > c[i] and l[j] >= c[i] * (1 - 0.005):          # confirmation bar (docs/IMMEDIATE_MOVE.md addendum)
@@ -127,6 +131,19 @@ def main():
             cbest = (g, win.mean())
         lines.append(f"{g:<10}{len(d):>10}/{len(h_):<11}{len(h_) / hold_days:>7.1f}{win.mean() * 100:>16.1f}%   [{lo * 100:.1f}%, {hi * 100:.1f}%]{lead:>13.0f}د  {'نجحت' if ok else 'رُفضت'}")
     lines.append(f"المجموعة الأفضل الناجحة (بعد تأكيد): {cbest[0] if cbest else 'لا شيء'}")
+    lines += ["", "== ملحق 2: حالة السوق (M: BTC صاعد 24س) وطبقة T1 وحدها ==",
+              f"{'المجموعة':<10}{'تنبيهات(تصميم/تحقق)':>22}{'/يوم':>7}{'فائز نظيف(تحقق)':>17}{'حد 95%':>18}{'مهلة +5% وسيط':>16}  الحكم"]
+    for g, test in (("T1", lambda r: r[0] == 0), ("T1+L", lambda r: r[0] == 0 and r[6]["L"]), ("M", lambda r: r[6]["M"]), ("T1+M", lambda r: r[0] == 0 and r[6]["M"])):
+        d = [r for r in rows if r[1] < cut and test(r)]
+        h_ = [r for r in rows if r[1] >= cut and test(r)]
+        if not h_:
+            lines.append(f"{g:<10}{len(d):>10}/0"); continue
+        win = np.array([r[3] for r in h_], float)
+        lo, hi = day_boot([np.array([r[3] for r in h_ if r[2] == dd], float) for dd in sorted({r[2] for r in h_})])
+        w = [r for r in h_ if r[3]]
+        lead = np.median([r[4] * 15 for r in w]) if w else float("nan")
+        ok = len(h_) >= 50 and win.mean() >= 1.5 * base_h and lo > base_h and lo > 0.25
+        lines.append(f"{g:<10}{len(d):>10}/{len(h_):<11}{len(h_) / hold_days:>7.1f}{win.mean() * 100:>16.1f}%   [{lo * 100:.1f}%, {hi * 100:.1f}%]{lead:>13.0f}د  {'نجحت' if ok else 'رُفضت'}")
     lines.append("")
     lines.append(f"المجموعة الأفضل الناجحة: {best[0] if best else 'لا شيء'}")
     grp = best[0] if best else "L+P+A"
