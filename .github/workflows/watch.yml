@@ -26,4 +26,4 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Watch levels (read-only)
-        run: python tools/watch_levels.py PIEVERSE_USDT '{"tp":[3.63],"stop":3.37,"long":true}'
+        run: python tools/watch_levels.py '[{"sym":"LUNC_USDT","tp":[5.0e-05,5.19e-05],"stop":4.62e-05,"long":true},{"sym":"BLESS_USDT","tp":[0.0130,0.0141],"stop":0.01093,"long":true}]'

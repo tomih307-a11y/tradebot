@@ -45,35 +45,44 @@ def main():
     from tradebot.config import load_config
     from tradebot.mexc.client import MexcClient
 
-    sym, levels = sys.argv[1], json.loads(sys.argv[2])
+    arg = json.loads(sys.argv[2]) if len(sys.argv) > 2 else None
+    specs = json.loads(sys.argv[1]) if sys.argv[1].lstrip().startswith("[") else [dict(arg, sym=sys.argv[1])]
     cl = MexcClient(load_config("config.toml").mexc)
-    t0, hit, events, last_pub = time.time(), set(), [], 0.0
+    t0, events, last_pub = time.time(), [], 0.0
     stamp = lambda: time.strftime("%H:%M:%S", time.gmtime()) + " UTC"
-    px = cl.last_price(sym)
-    events.append(f"{stamp()} · بدأت مراقبة {sym} · السعر {px} · أهداف {levels['tp']} · وقف {levels['stop']}")
-    publish(events, f"{stamp()} السعر {px}")
-    reminded = False
-    while time.time() - t0 < MAX_SEC:
-        try:
-            now = int(time.time())
-            k = cl.klines(sym, "Min1", now - 240, now)
-            hi = max(list(k.get("high", [])) or [px]); lo = min(list(k.get("low", [])) or [px])
-            px = cl.last_price(sym)
-            hi, lo = max(hi, px), min(lo, px)
-            new = check(levels, hit, hi, lo)
-            for e in new:
-                events.append(f"{stamp()} · {sym} · {e} · السعر الآن {px}")
-            if not reminded and time.time() - t0 >= REMIND_SEC and "TP1" not in hit:
-                reminded = True; events.append(f"{stamp()} · {sym} · مرّت ساعتان دون بلوغ الهدف الأول · السعر {px}")
-                new.append("reminder")
-            if new or time.time() - last_pub >= HEARTBEAT:
-                publish(events, f"{stamp()} السعر {px} · محقق: {sorted(hit) or 'لا شيء'}"); last_pub = time.time()
-            if "STOP" in hit or f"TP{len(levels['tp'])}" in hit:
-                events.append(f"{stamp()} · انتهت المراقبة"); publish(events, f"{stamp()} انتهت"); return
-        except Exception as e:                                        # transient API errors must not kill the watch
-            print("err", e, file=sys.stderr)
+    st = {}
+    for sp in specs:
+        px = cl.last_price(sp["sym"])
+        st[sp["sym"]] = dict(sp=sp, hit=set(), px=px, done=False, reminded=False)
+        events.append(f"{stamp()} · بدأت مراقبة {sp['sym']} · السعر {px} · أهداف {sp['tp']} · وقف {sp['stop']}")
+    publish(events, f"{stamp()} " + " · ".join(f"{k} {v['px']}" for k, v in st.items()))
+    while time.time() - t0 < MAX_SEC and not all(v["done"] for v in st.values()):
+        pushed = False
+        for sym, v in st.items():
+            if v["done"]:
+                continue
+            try:
+                now = int(time.time())
+                k = cl.klines(sym, "Min1", now - 240, now)
+                px = cl.last_price(sym)
+                hi = max(list(k.get("high", [])) + [px]); lo = min(list(k.get("low", [])) + [px])
+                v["px"] = px
+                new = check(v["sp"], v["hit"], hi, lo)
+                for e in new:
+                    events.append(f"{stamp()} · {sym} · {e} · السعر الآن {px}")
+                if not v["reminded"] and time.time() - t0 >= REMIND_SEC and "TP1" not in v["hit"]:
+                    v["reminded"] = True; new.append("reminder")
+                    events.append(f"{stamp()} · {sym} · مرّت ساعتان دون بلوغ الهدف الأول · السعر {px}")
+                pushed = pushed or bool(new)
+                if "STOP" in v["hit"] or f"TP{len(v['sp']['tp'])}" in v["hit"]:
+                    v["done"] = True; events.append(f"{stamp()} · {sym} · انتهت مراقبة هذه العملة")
+                    pushed = True
+            except Exception as e:                                    # transient API errors must not kill the watch
+                print("err", sym, e, file=sys.stderr)
+        if pushed or time.time() - last_pub >= HEARTBEAT:
+            publish(events, f"{stamp()} " + " · ".join(f"{k} {v['px']} {sorted(v['hit']) or '-'}" for k, v in st.items())); last_pub = time.time()
         time.sleep(POLL)
-    events.append(f"{stamp()} · انتهت مهلة المراقبة (6 ساعات) · محقق: {sorted(hit) or 'لا شيء'}"); publish(events, f"{stamp()} انتهت المهلة")
+    events.append(f"{stamp()} · انتهت المراقبة"); publish(events, f"{stamp()} انتهت")
 
 
 if __name__ == "__main__":
