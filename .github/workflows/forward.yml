@@ -1,7 +1,5 @@
 name: forward-xsec
 on:
-  schedule:
-    - cron: "20 0 * * *"
   push:
     branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
     paths: [".github/run-forward.txt"]
