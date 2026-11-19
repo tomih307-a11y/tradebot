@@ -21,16 +21,7 @@ jobs:
       - name: Live MTF scan (read-only, no orders)
         run: |
           mkdir -p reports/mtf_scan
-          python - <<'PY' 2>&1 | tee reports/mtf_scan/velvet_path.txt
-          import sys, time
-          sys.path.insert(0, '.')
-          from tradebot.config import load_config
-          from tradebot.mexc.client import MexcClient
-          cl = MexcClient(load_config('config.toml').mexc)
-          k = cl.klines('VELVET_USDT', 'Min1', 1795088280, int(time.time()))
-          for t, o, h, l, c in zip(k['time'], k['open'], k['high'], k['low'], k['close']):
-              print(time.strftime('%H:%M', time.gmtime(t)), o, h, l, c)
-          PY
+          python -m tradebot.strategies.mtf_entry.ob_scan reports/mtf_scan/ob_scan.txt 2>&1 | tail -60
       - name: Publish
         if: always()
         run: |

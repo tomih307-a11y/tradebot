@@ -14,7 +14,7 @@ from .channel_logic import atr14
 N, MAX_AGE, NEAR_ATR, BUF_ATR, MIN_TURN = 3, 48, 0.5, 0.25, 5_000_000
 
 
-def scan_symbol(o, h, l, c, px, o4, h4, l4, c4):
+def scan_symbol(o, h, l, c, px, o4, h4, l4, c4, t1h=None, t15=None, l15=None):
     """Return dict for a bullish 1H OB that price is in/near now, else None. Uses closed candles + current price px."""
     _, ev = structure(c, h, l, N)
     cand = [e for e in ev if e["dir"] == 1 and len(c) - 1 - e["i"] <= MAX_AGE]
@@ -26,12 +26,19 @@ def scan_symbol(o, h, l, c, px, o4, h4, l4, c4):
         return None
     lo, hi = ob[0], ob[1]
     after = slice(e["i"] + 1, len(c))
-    if (c[after] < lo).any() or px < lo:                               # mitigated/broken
+    if (c[after] < lo).any() or px < lo:                               # mitigated/broken (closed 1H candles)
         return None
+    if t1h is not None and t15 is not None:                            # also the forming hour: any 15m wick below the zone since the break invalidates it
+        since = t15 >= t1h[e["i"]] + 3600
+        if since.any() and l15[since].min() < lo:
+            return None
     atr = atr14(h, l, c)[-1]
     if not np.isfinite(atr) or not (lo <= px <= hi + NEAR_ATR * atr):
         return None
     first = bool(not (l[after] <= hi).any() and px <= hi)
+    if first and t1h is not None and t15 is not None:
+        since = t15 >= t1h[e["i"]] + 3600
+        first = bool(not (l15[since][:-1] <= hi).any()) if since.sum() > 1 else first
     t4, _ = structure(c4, h4, l4, N)
     stop = lo - BUF_ATR * atr
     return dict(lo=lo, hi=hi, px=px, stop=stop, risk_pct=(px - stop) / px * 100, atr_pct=atr / px * 100, first=first,
@@ -53,15 +60,17 @@ def main():
     for tk in tick:
         sym = tk["symbol"]
         try:
-            def get(tf, days):
+            def get(tf, days, keys=("open", "high", "low", "close")):
                 sec = TF_SECONDS[tf]
                 k = drop_unclosed(fetch_range(cl, sym, tf, int(now // sec * sec) - days * 86400, now), tf, now)
-                return tuple(np.asarray(k[x], float) for x in ("open", "high", "low", "close"))
+                return tuple(np.asarray(k[x], float) for x in keys)
             o, h, l, c = get("Min60", 40)
+            t1h, = get("Min60", 40, ("time",))
+            t15, l15 = get("Min15", 6, ("time", "low"))
             o4, h4, l4, c4 = get("Hour4", 80)
             if len(c) < 200 or len(c4) < 60:
                 continue
-            r = scan_symbol(o, h, l, c, float(tk["lastPrice"]), o4, h4, l4, c4)
+            r = scan_symbol(o, h, l, c, float(tk["lastPrice"]), o4, h4, l4, c4, t1h, t15, l15)
             if r:
                 r.update(sym=sym, turn=float(tk["amount24"]), chg=float(tk.get("riseFallRate") or 0) * 100)
                 res.append(r)
