@@ -1,0 +1,25 @@
+name: scan-v1
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-scan.txt"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan
+        run: python3 scanner.py 6 2>&1 | tail -80
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp scan.txt /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b scan-results
+          git config user.name "bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "scan" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin scan-results
