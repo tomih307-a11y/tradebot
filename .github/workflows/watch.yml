@@ -25,5 +25,9 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
+      - name: Restore history branch
+        run: |
+          git clone -q --depth 1 --branch watch-results "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/watch_out 2>/dev/null || true
+          cd /tmp/watch_out 2>/dev/null && git config user.name "watch-bot" && git config user.email "bot@example.com" || true
       - name: Watch levels (read-only)
-        run: python tools/watch_levels.py '[{"sym":"VELVET_USDT","trail":0.0019,"stop0":0.0695,"deadline":1795262174}]'
+        run: python tools/watch_levels.py '[{"sym":"TAO_USDT","trail":1.07,"stop0":195.43,"deadline":1795264888},{"sym":"BLESS_USDT","trail":0.0002668,"stop0":0.0108572,"deadline":1795264888},{"sym":"BNB_USDT","trail":4.573,"stop0":588.987,"deadline":1795264888},{"sym":"TIA_USDT","trail":0.006125,"stop0":0.349175,"deadline":1795264888},{"sym":"IRYS_USDT","trail":0.0029,"stop0":0.0203,"hh":0.02358,"deadline":1795264888},{"sym":"LUNC_USDT","trail":3.7e-06,"stop0":4.37e-05,"hh":4.845e-05,"deadline":1795264888}]'

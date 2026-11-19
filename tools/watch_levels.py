@@ -36,6 +36,11 @@ def trail_step(hh, stop, hi, lo, risk, stop0):
 def publish(events, status, repo_dir="/tmp/watch_out"):
     d = Path(repo_dir); d.mkdir(exist_ok=True)
     (d / "events.txt").write_text("\n".join(events) + "\n", encoding="utf-8")
+    n0 = getattr(publish, "n", 0)
+    if len(events) > n0:                                               # keep every event across restarts
+        with (d / "history.txt").open("a", encoding="utf-8") as f:
+            f.write("\n".join(events[n0:]) + "\n")
+        publish.n = len(events)
     (d / "status.txt").write_text(status + "\n", encoding="utf-8")
     run = lambda *a: subprocess.run(a, cwd=d, check=False, capture_output=True, text=True)
     if not (d / ".git").exists():
