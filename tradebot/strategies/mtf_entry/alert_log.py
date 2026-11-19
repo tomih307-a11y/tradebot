@@ -79,7 +79,7 @@ def main():
             tier = tier_of({x: f[x] for x in ("F1", "F2", "F3")}); tier[:WARM] = -1; tier[~valid] = -1
             a15 = atr14(h, l, c)
             for i, kk in alerts(tier):
-                if kk > 2 or i < n - 4 or np.isnan(a15[i]):
+                if kk > 2 or i < n - 8 or np.isnan(a15[i]):
                     continue
                 ft = alert_features(c, amt, a15, i)
                 ib = int(np.searchsorted(tb, t[i], side="right")) - 1

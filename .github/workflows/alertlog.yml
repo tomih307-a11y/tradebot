@@ -1,7 +1,7 @@
 name: alert-log
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/30 * * * *"
   push:
     branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
     paths: [".github/run-alertlog.txt"]
