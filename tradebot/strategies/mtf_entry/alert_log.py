@@ -13,9 +13,11 @@ from .channel_logic import atr14
 from .early_signs import WARM, features
 from .hunter_tiers import alerts, tier_of
 from .immediate_move import AHEAD, alert_features, clean_label
+from .trail_exit import HMAX, trail_trade
 
-COLS = ["bar_time", "sym", "tier", "px", "L", "P", "A", "U", "M", "turn24", "ret24", "atr1h", "logged_at", "resolved", "clean", "bars_to_5", "mae", "mfe24"]
+COLS = ["bar_time", "sym", "tier", "px", "L", "P", "A", "U", "M", "turn24", "ret24", "atr1h", "logged_at", "resolved", "clean", "bars_to_5", "mae", "mfe24", "trail2", "trail3"]
 RESOLVE_AFTER = (AHEAD + 1) * 900
+TRAIL_AFTER = (HMAX + 1) * 900
 
 
 def load_rows(path: Path) -> list[dict]:
@@ -44,6 +46,13 @@ def summarize(rows: list[dict]) -> str:
         return f"{sum(r['clean'] == '1' for r in sel) / len(sel) * 100:.1f}% ({len(sel)})" if sel else "-"
     lines.append(f"فائز نظيف: الكل {rate(done)} · T1 {rate([r for r in done if r['tier'] == '0'])} · T2 {rate([r for r in done if r['tier'] == '1'])} · "
                  f"T3 {rate([r for r in done if r['tier'] == '2'])} · L {rate([r for r in done if r['L'] == '1'])} · T1+L {rate([r for r in done if r['tier'] == '0' and r['L'] == '1'])}")
+    tdone = [r for r in rows if r.get("trail2")]
+    if tdone:
+        def mr(sel, col):
+            v = [float(r[col]) for r in sel if r.get(col)]
+            return f"{sum(v) / len(v):+.3f} ({len(v)})" if v else "-"
+        lines.append(f"وقف متحرك (متوسط صافي R): k=2 الكل {mr(tdone, 'trail2')} · T1 {mr([r for r in tdone if r['tier'] == '0'], 'trail2')} · "
+                     f"k=3 الكل {mr(tdone, 'trail3')} · T1 {mr([r for r in tdone if r['tier'] == '0'], 'trail3')}")
     lines.append(f"آخر تحديث {time.strftime('%Y-%m-%d %H:%M', time.gmtime())} UTC · القواعد: docs/FORWARD_ALERTS.md")
     return "\n".join(lines)
 
@@ -65,7 +74,8 @@ def main():
             and t["symbol"] not in NON_CRYPTO and float(t.get("amount24") or 0) >= 300_000]
     new, pending = [], {}
     for r in rows:
-        if r["resolved"] != "1" and now - float(r["bar_time"]) - 900 >= RESOLVE_AFTER:
+        age = now - float(r["bar_time"]) - 900
+        if (r["resolved"] != "1" and age >= RESOLVE_AFTER) or (not r.get("trail2") and age >= TRAIL_AFTER):
             pending.setdefault(r["sym"], []).append(r)
     for tk in tick:
         sym = tk["symbol"]
@@ -89,7 +99,13 @@ def main():
             for r in pending.get(sym, []):
                 idx = np.where(t == float(r["bar_time"]))[0]
                 if len(idx):
-                    lab = clean_label(h, l, c, int(idx[0]))
+                    ib0 = int(idx[0])
+                    if not r.get("trail2") and ib0 + HMAX < n and not np.isnan(a15[ib0]):                 # open target + trailing stop (docs/TRAIL_EXIT.md)
+                        for kk_, col in ((2, "trail2"), (3, "trail3")):
+                            tr = trail_trade(o, h, l, c, ib0, kk_ * 2 * a15[ib0])
+                            if tr:
+                                r[col] = round(tr[0], 3)
+                    lab = clean_label(h, l, c, ib0) if r["resolved"] != "1" else None
                     if lab is not None:
                         r.update(resolved="1", clean=int(lab[0]), bars_to_5="" if np.isnan(lab[1]) else int(lab[1]), mae=round(lab[2], 2),
                                  mfe24=round((h[int(idx[0]) + 1:int(idx[0]) + 1 + AHEAD].max() / c[int(idx[0])] - 1) * 100, 2))
