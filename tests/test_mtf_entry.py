@@ -200,3 +200,17 @@ def test_channel_sim_breakeven_and_liquidation():
     l2 = np.array([100, 94.0, 94, 94, 94, 94.0])
     ev, st = CS.simulate(sig, h * 0 + 100, l2, c * 0 + 100, t, 0, 20, 0.0)   # -6% at 20x -> liquidated first (-4.5%)
     assert st == "تصفية قبل TP1" and abs(sum(p for _, p in ev) + 1.0) < 1e-9
+
+
+def test_immediate_move_label_and_filters():
+    import numpy as np
+    from tradebot.strategies.mtf_entry import immediate_move as IM
+    c = np.full(40, 100.0); h = c.copy(); l = c.copy()
+    h[5] = 106.0; l[3] = 99.0                        # +6% reached at bar 5, adverse only -1% before it -> clean
+    ok, bars, mae = IM.clean_label(h, l, c, 0)
+    assert ok and bars == 5 and abs(mae + 1.0) < 1e-9
+    l2 = l.copy(); l2[2] = 97.0                      # -3% before the target -> not clean
+    assert IM.clean_label(h, l2, c, 0)[0] is False
+    assert IM.clean_label(h, l, c, 30) is None       # not enough future bars
+    f = dict(L=True, P=True, A=False, U=True)
+    assert IM.passes(f, "L+P") and not IM.passes(f, "L+P+A")
