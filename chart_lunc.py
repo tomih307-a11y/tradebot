@@ -4,6 +4,7 @@ import time
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
+import luxalgo_ob as LX
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -57,6 +58,7 @@ mcross = [i for i in range(i0 + 1, len(t)) if macd[i - 1] <= 0 < macd[i]]
 pk = max(range(i0, len(t)), key=lambda i: h[i])
 cross = [i for i in crossings if i < pk][-1]
 
+obs, snaps = LX.run(o, h, l, c)
 fig, ax = plt.subplots(3, 1, figsize=(13, 10), sharex=True, gridspec_kw={"height_ratios": [3, 1.3, 1.3]})
 for k, i in enumerate(range(i0, len(t))):
     col = "#26a69a" if c[i] >= o[i] else "#ef5350"
@@ -64,6 +66,9 @@ for k, i in enumerate(range(i0, len(t))):
     ax[0].add_patch(Rectangle((k - 0.35, min(o[i], c[i])), 0.7, abs(c[i] - o[i]) or 1e-9, color=col))
 xs = range(len(t) - i0)
 ax[0].plot(xs, t50[i0:], color="#2962ff", lw=1.6, label="TEMA 50")
+for ob in snaps[-1]:                                    # order blocks alive at the last bar (as LuxAlgo draws them)
+    x0 = max(ob["t"] - i0, 0)
+    ax[0].add_patch(Rectangle((x0, ob["lo"]), len(t) - i0 - x0, ob["hi"] - ob["lo"], color="#3179f5" if ob["bias"] == 1 else "#f77c80", alpha=0.25, lw=0))
 ax[1].plot(xs, macd[i0:], color="#2962ff", lw=1.2, label="MACD"); ax[1].plot(xs, msig[i0:], color="#ff9800", lw=1.2, label="Signal")
 ax[1].bar(xs, hist[i0:], color=["#26a69a" if v >= 0 else "#ef5350" for v in hist[i0:]], width=0.8); ax[1].axhline(0, color="gray", ls="--", lw=0.8)
 ax[2].plot(xs, pmo[i0:], color="#2962ff", lw=1.4, label="PMO"); ax[2].plot(xs, sig[i0:], color="#ff9800", lw=1.4, label="Signal"); ax[2].axhline(0, color="gray", ls="--", lw=0.8)
@@ -82,5 +87,9 @@ lines = [f"LUNC 15m · PMO(35,20,10) صعود عبر الصفر عند {dt(t[cro
          f"أعلى سعر بعدها {seg_h:.8f} ({(seg_h / c[cross] - 1) * 100:+.1f}% من إغلاق الشمعة) عند {dt(t[pk]):%d %b %H:%M}",
          "عبور المكدي للصفر صعوداً في النافذة: " + "، ".join(f"{dt(t[i]):%d %H:%M}" for i in mcross),
          f"فوق TEMA50 وقت عبور PMO: {'نعم' if c[cross] > t50[cross] else 'لا'} (إغلاق {c[cross]:.8f} مقابل {t50[cross]:.8f})"]
+alive = snaps[cross]
+inside = [ob for ob in alive if ob["bias"] == 1 and ob["lo"] <= c[cross] <= ob["hi"]]
+lines.append("أوردر بلوك (LuxAlgo داخلي، أحدث 5 حية) عند لمس PMO: " + (("السعر داخل صاعد " + "، ".join(f"[{ob['lo']:.8f} إلى {ob['hi']:.8f}] (تكوّن {dt(t[ob['t']]):%d %H:%M})" for ob in inside)) if inside else "السعر ليس داخل أي أوردر بلوك صاعد"))
+lines.append("الأوردر بلوك الحي عندها: " + "؛ ".join(f"{'صاعد' if ob['bias'] == 1 else 'هابط'} [{ob['lo']:.8f}-{ob['hi']:.8f}]" for ob in alive))
 open("chart.txt", "w", encoding="utf-8").write("\n".join(lines))
 print("\n".join(lines))
