@@ -25,6 +25,14 @@ def check(levels, hit, hi, lo):
     return ev
 
 
+def trail_step(hh, stop, hi, lo, risk, stop0):
+    """One poll of a long trailing stop. -> (hit, new_stop, new_highest). The stop only rises; it is checked BEFORE this window's high is applied."""
+    if lo <= stop:
+        return True, stop, hh
+    hh = max(hh, hi)
+    return False, max(stop, stop0, hh - risk), hh
+
+
 def publish(events, status, repo_dir="/tmp/watch_out"):
     d = Path(repo_dir); d.mkdir(exist_ok=True)
     (d / "events.txt").write_text("\n".join(events) + "\n", encoding="utf-8")
@@ -53,8 +61,11 @@ def main():
     st = {}
     for sp in specs:
         px = cl.last_price(sp["sym"])
-        st[sp["sym"]] = dict(sp=sp, hit=set(), px=px, done=False, reminded=False)
-        events.append(f"{stamp()} · بدأت مراقبة {sp['sym']} · السعر {px} · أهداف {sp['tp']} · وقف {sp['stop']}")
+        st[sp["sym"]] = dict(sp=sp, hit=set(), px=px, done=False, reminded=False, hh=max(px, sp.get("hh", 0)), stop=sp.get("stop0", 0), rep=sp.get("stop0", 0))
+        if "trail" in sp:
+            events.append(f"{stamp()} · بدأت مراقبة {sp['sym']} بوقف متحرك · السعر {px} · وقف أول {sp['stop0']} · مسافة الوقف المتحرك {sp['trail']} · الهدف مفتوح")
+        else:
+            events.append(f"{stamp()} · بدأت مراقبة {sp['sym']} · السعر {px} · أهداف {sp['tp']} · وقف {sp['stop']}")
     publish(events, f"{stamp()} " + " · ".join(f"{k} {v['px']}" for k, v in st.items()))
     while time.time() - t0 < MAX_SEC and not all(v["done"] for v in st.values()):
         pushed = False
@@ -67,6 +78,17 @@ def main():
                 px = cl.last_price(sym)
                 hi = max(list(k.get("high", [])) + [px]); lo = min(list(k.get("low", [])) + [px])
                 v["px"] = px
+                if "trail" in v["sp"]:                                   # open target + trailing stop
+                    hit, v["stop"], v["hh"] = trail_step(v["hh"], v["stop"], hi, lo, v["sp"]["trail"], v["sp"]["stop0"])
+                    if hit:
+                        events.append(f"{stamp()} · {sym} · الوقف المتحرك لُمس عند {v['stop']:.6g} (أعلى سعر {v['hh']:.6g}) · السعر الآن {px}")
+                        v["done"] = True; pushed = True
+                    elif v["stop"] >= v["rep"] + 0.25 * v["sp"]["trail"]:
+                        v["rep"] = v["stop"]; pushed = True
+                        events.append(f"{stamp()} · {sym} · الوقف المتحرك ارتفع إلى {v['stop']:.6g} (أعلى سعر {v['hh']:.6g}) · السعر الآن {px}")
+                    if not v["done"] and time.time() > v["sp"].get("deadline", 1e18):
+                        events.append(f"{stamp()} · {sym} · انتهت مهلة الصفقة · السعر {px} · الوقف {v['stop']:.6g}"); v["done"] = True; pushed = True
+                    continue
                 new = check(v["sp"], v["hit"], hi, lo)
                 for e in new:
                     events.append(f"{stamp()} · {sym} · {e} · السعر الآن {px}")
@@ -80,7 +102,7 @@ def main():
             except Exception as e:                                    # transient API errors must not kill the watch
                 print("err", sym, e, file=sys.stderr)
         if pushed or time.time() - last_pub >= HEARTBEAT:
-            publish(events, f"{stamp()} " + " · ".join(f"{k} {v['px']} {sorted(v['hit']) or '-'}" for k, v in st.items())); last_pub = time.time()
+            publish(events, f"{stamp()} " + " · ".join(f"{k} {v['px']} {sorted(v['hit']) or '-'} stop={v['stop']:.6g} hh={v['hh']:.6g}" for k, v in st.items())); last_pub = time.time()
         time.sleep(POLL)
     events.append(f"{stamp()} · انتهت المراقبة"); publish(events, f"{stamp()} انتهت")
 
