@@ -113,6 +113,7 @@ def main():
 
     days = int(sys.argv[1]) if len(sys.argv) > 1 else 120
     out = sys.argv[2] if len(sys.argv) > 2 else None
+    short = len(sys.argv) > 3 and sys.argv[3] == "short"               # price-inverse mirror (docs/QUALITY_SCAN.md addendum)
     cl, now = MexcClient(load_config("config.toml").mexc), int(time.time())
     tick = [t for t in cl.tickers() if str(t.get("symbol", "")).endswith("_USDT") and not t["symbol"].endswith("STOCK_USDT")
             and t["symbol"] not in NON_CRYPTO and float(t.get("amount24") or 0) >= 1_000_000]
@@ -125,6 +126,8 @@ def main():
             if len(c15) < 1500:
                 continue
             th, o, h, l, c = hourly(t, o15, h15, l15, c15)
+            if short:
+                o, h, l, c = 1 / o, 1 / l, 1 / h, 1 / c
             comp, ob_lo, atr = components(th, o, h, l, c)
         except Exception as e:
             print("skip", sym, e, file=sys.stderr)
@@ -152,7 +155,7 @@ def main():
     cut = max(r[1] for r in rows) - 30 * 86400
     bh = [b for b in base if b[0] >= cut]
     bm = float(np.mean([b[2] for b in bh]))
-    lines = [f"نظام التقاء SMC/المتوسطات/RSI/MACD · {nsym} عقداً (سيولة ≥1M) · {days} يوماً · فاصل التحقق {time.strftime('%Y-%m-%d', time.gmtime(cut))} · القواعد: docs/QUALITY_SCAN.md", "",
+    lines = [f"{'شورت (مرآة السعر) · ' if short else ''}نظام التقاء SMC/المتوسطات/RSI/MACD · {nsym} عقداً (سيولة ≥1M) · {days} يوماً · فاصل التحقق {time.strftime('%Y-%m-%d', time.gmtime(cut))} · القواعد: docs/QUALITY_SCAN.md", "",
              f"أساس عشوائي (تحقق): متوسط R {bm:+.3f} ({len(bh)} صفقة)",
              f"{'المستوى':<8}{'إشارات(تصميم/تحقق)':>22}{'/يوم':>7}{'متوسط R':>10}{'حد 99%':>20}{'رابحة':>8}  الحكم"]
     hold_days = max((max(r[1] for r in rows) - cut) / 86400, 1)
@@ -174,6 +177,11 @@ def main():
     lines += ["", "إشارات حالية (آخر 3 ساعات، سيولة ≥ 5M):"]
     for sym, tier, age, px, lo_, d, a_, cp, tn in sorted(live, key=lambda x: (x[1], x[2])):
         stop = px - d
+        if short:                                                     # back to real prices
+            real_px, real_stop = 1 / px, 1 / stop
+            lines.append(f"  {tier} شورت {sym:<14} منذ {age}س · سعر {real_px:.6g} · وقف {real_stop:.6g} (+{(real_stop / real_px - 1) * 100:.1f}%) وقف متحرك بالمسافة نفسها (تقريباً) · ATR1س {a_ / px * 100:.1f}% · "
+                         f"سيولة {tn / 1e6:.1f}M · مكوّنات {int(cp.sum())}/7: " + "، ".join(nm for nm, v in zip(NAMES, cp) if v))
+            continue
         lines.append(f"  {tier} {sym:<14} منذ {age}س · سعر {px:.6g} · أدنى OB {lo_:.6g} · وقف {stop:.6g} (−{d / px * 100:.1f}%) وقف متحرك بالمسافة نفسها · ATR1س {a_ / px * 100:.1f}% · "
                      f"سيولة {tn / 1e6:.1f}M · مكوّنات {int(cp.sum())}/7: " + "، ".join(nm for nm, v in zip(NAMES, cp) if v))
     if not live:
