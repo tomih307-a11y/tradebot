@@ -44,9 +44,18 @@ def tema(x, n):
 dt = lambda x: datetime.fromtimestamp(x, timezone.utc) + timedelta(hours=TZ)
 report = []
 for spec in sys.argv[1:]:
-    sym, dd, hh, mm = spec.split(":")
+    n, sym, md, hh, mm = spec.split(":")
+    month, dd = (int(x) for x in md.split("-"))
     now = int(time.time())
-    d = get(f"https://contract.mexc.com/api/v1/contract/kline/{sym}?interval=Min15&start={now - 14 * 86400}&end={now}")
+    d = {k: [] for k in ("time", "open", "high", "low", "close")}
+    a = now - 80 * 86400
+    while a < now:                                                      # paged fetch (1000 candles per request)
+        part = get(f"https://contract.mexc.com/api/v1/contract/kline/{sym}?interval=Min15&start={a}&end={min(a + 900000, now)}")
+        for k in d:
+            d[k] += part[k]
+        a += 900000
+    seen = set(); idx = [i for i, tt in enumerate(d["time"]) if not (tt in seen or seen.add(tt))]
+    d = {k: [d[k][i] for i in idx] for k in d}
     keep = [i for i, tt in enumerate(d["time"]) if tt + 900 <= now]
     t, o, h, l, c = ([d[k][i] for i in keep] for k in ("time", "open", "high", "low", "close"))
     roc = [0.0] + [(c[i] / c[i - 1] - 1) * 100 for i in range(1, len(c))]
@@ -57,10 +66,12 @@ for spec in sys.argv[1:]:
     hist = [a - b for a, b in zip(macd, msig)]
     t50 = tema(c, 50)
     obs, snaps = LX.run(o, h, l, c)
-    want = datetime(2026, 11, int(dd), int(hh), int(mm), tzinfo=timezone.utc) - timedelta(hours=TZ)
+    want = datetime(2026, month, int(dd), int(hh), int(mm), tzinfo=timezone.utc) - timedelta(hours=TZ)
     crosses = [i for i in range(1, len(c)) if pmo[i - 1] <= 0 < pmo[i]]
     cross = min(crosses, key=lambda i: abs(t[i] - want.timestamp()))
     i0 = max(cross - 80, 0)
+    end = cross + 4                                                   # blind: only 3 candles after the touch
+    t, o, h, l, c, pmo, sig, macd, msig, hist, t50 = (x[:end] for x in (t, o, h, l, c, pmo, sig, macd, msig, hist, t50))
     alive = snaps[cross]
     inside = [ob for ob in alive if ob["bias"] == 1 and ob["lo"] <= c[cross] <= ob["hi"]]
     fig, ax = plt.subplots(3, 1, figsize=(12, 9), sharex=True, gridspec_kw={"height_ratios": [3, 1.2, 1.2]})
@@ -79,11 +90,11 @@ for spec in sys.argv[1:]:
     for a in ax:
         a.axvline(cross - i0, color="orange", lw=1.8); a.grid(alpha=0.2)
     ax[0].legend(loc="upper left", fontsize=8)
-    ax[0].set_title(f"{sym} 15m | PMO(35,20,10) zero-touch up at {dt(t[cross]):%d %b %H:%M} (UTC+4) | blue = bullish OB alive then, red = bearish OB", fontsize=10)
+    ax[0].set_title(f"case {n} | {sym} 15m | PMO(35,20,10) zero-touch up at {dt(t[cross]):%d %b %H:%M} (UTC+4) | blue = bullish OB alive then, red = bearish OB", fontsize=10)
     ticks = list(range(0, len(c) - i0, 12))
     ax[2].set_xticks(ticks); ax[2].set_xticklabels([f"{dt(t[i0 + k]):%d %H:%M}" for k in ticks], rotation=45, fontsize=8)
-    plt.tight_layout(); plt.savefig(f"{sym}.png", dpi=105); plt.close()
-    report.append(f"{sym}: لمس PMO للصفر {dt(t[cross]):%d %H:%M} (UTC+4) · إغلاق {c[cross]:.8g} · " +
+    plt.tight_layout(); plt.savefig(f"case_{n}.png", dpi=105); plt.close()
+    report.append(f"{n} {sym}: لمس PMO للصفر {dt(t[cross]):%d %H:%M} (UTC+4) · إغلاق {c[cross]:.8g} · " +
                   ("داخل أوردر بلوك صاعد [" + f"{inside[0]['lo']:.8g}-{inside[0]['hi']:.8g}]" if inside else "ليس داخل أي أوردر بلوك صاعد") +
                   " · أوردر بلوك حي: " + "؛ ".join(f"{'صاعد' if ob['bias'] == 1 else 'هابط'} [{ob['lo']:.8g}-{ob['hi']:.8g}]" for ob in alive) +
                   f" · المكدي {'فوق' if macd[cross] > msig[cross] else 'تحت'} الإشارة · {'فوق' if c[cross] > t50[cross] else 'تحت'} TEMA50")
