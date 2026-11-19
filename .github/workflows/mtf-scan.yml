@@ -21,7 +21,7 @@ jobs:
       - name: Live MTF scan (read-only, no orders)
         run: |
           mkdir -p reports/mtf_scan
-          python -m tradebot.strategies.mtf_entry.ob_scan reports/mtf_scan/ob_scan.txt 2>&1 | tail -60
+          python tools/level_status.py VELVET_USDT 1795088760 0.07143 0.0695 0.0800 long 2>&1 | tee reports/mtf_scan/velvet.txt
       - name: Publish
         if: always()
         run: |
