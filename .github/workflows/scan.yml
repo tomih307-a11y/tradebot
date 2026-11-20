@@ -13,9 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: |
-          git fetch origin track-results:tr && git show tr:tracker.json > tracker.json
-          python3 be_sim.py 2>&1 | tee scan.txt | tail -60
+        run: pip install -q numpy && python3 stops_test.py 2>&1 | tee scan.txt | tail -60
       - name: Publish
         if: always()
         run: |
