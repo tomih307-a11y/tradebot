@@ -7,9 +7,9 @@ import scanner_pmo as P
 
 state = json.load(open("tracker.json"))
 now = int(time.time())
-print(f"{'العملة':10s} {'المجموعة':8s} | {'فعلي (وقف أصلي)':>22s} | {'وقف عند سعر الدخول':>22s} | {'وقف ينتقل لسعر الدخول بعد +1R':>30s}")
-tot = {"C": 0.0, "A": 0.0, "B": 0.0}
-totp = {"C": 0.0, "A": 0.0, "B": 0.0}
+print(f"{'العملة':10s} {'المجموعة':8s} | {'فعلي (وقف أصلي)':>28s} | {'بلا وقف':>34s}")
+tot = {"C": 0.0, "N": 0.0}
+totp = {"C": 0.0, "N": 0.0}
 for tr in state:
     d = None
     for _ in range(5):
@@ -25,8 +25,8 @@ for tr in state:
     risk = ent - stop
     cost_pct = 0.1
     res = {}
-    for name in ("C", "A", "B"):
-        cur_stop = ent if name == "A" else stop
+    for name in ("C", "N"):
+        cur_stop = 0.0 if name == "N" else stop
         moved = False
         out = None
         for j in range(1, len(c)):
@@ -48,5 +48,5 @@ for tr in state:
     for k in res:
         tot[k] += res[k][1]; totp[k] += res[k][0]
     f = lambda r: f"{r[0]:+.2f}% / {r[1]:+.2f}R ({r[2]})"
-    print(f"{tr['sym'][:-5]:10s} {tr['group']:8s} | {f(res['C']):>22s} | {f(res['A']):>22s} | {f(res['B']):>30s}")
-print(f"\nالمجموع: فعلي {totp['C']:+.2f}% / {tot['C']:+.2f}R | وقف عند الدخول {totp['A']:+.2f}% / {tot['A']:+.2f}R | وقف ينتقل {totp['B']:+.2f}% / {tot['B']:+.2f}R  (عدد الصفقات {len(state)})")
+    print(f"{tr['sym'][:-5]:10s} {tr['group']:8s} | {f(res['C']):>28s} | {f(res['N']):>34s}")
+print(f"\nالمجموع: فعلي {totp['C']:+.2f}% / {tot['C']:+.2f}R | بلا وقف {totp['N']:+.2f}% / {tot['N']:+.2f}R  (عدد الصفقات {len(state)})")
