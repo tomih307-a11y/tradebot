@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: python3 coin_pmo.py HMSTR 2>&1 | tee scan.txt | tail -60
+        run: pip install -q numpy && python3 retest_test.py 2>&1 | tee scan.txt | tail -60
       - name: Publish
         if: always()
         run: |
