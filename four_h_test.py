@@ -54,7 +54,7 @@ def work(sym):
         touch = p[i - 1] <= 0 < p[i] and i - last_touch >= 4
         if touch:
             last_touch = i
-        if not (touch or event):
+        if not (touch or event or i % 16 == 0):
             continue
         k = kk[i]
         ago = (i - last_ev) * 0.25 if last_ev > 0 else 999                  # hours since last 4H touch (at 15m resolution)
@@ -62,11 +62,11 @@ def work(sym):
         pos = pf[i] > 0
         alert = (not pos) and pf[i] > sf[i] and slope > 0 and -pf[i] <= 3 * slope
         sig = {"S0": touch, "S1": touch and pos and ago <= 8, "S2": touch and pos and ago <= 24, "S3": event, "S4": touch and alert,
-               "S5": touch and pos and ago > 24, "S6": touch and (not pos) and not alert}
+               "S5": touch and pos and ago > 24, "S6": touch and (not pos) and not alert, "BASE": i % 16 == 0}
         if not any(sig.values()):
             continue
         ent = c[i]
-        row = {"t": t[i], "sig": sig}
+        row = {"t": t[i], "sym": sym, "sig": sig}
         s_a = max(min(ent - 1.5 * atr[i], ent * 0.995), ent * 0.94)
         s_b = max(min(ent - 1.5 * atr4[k], ent * 0.995), ent * 0.90)
         for xn, stp0, horizon in (("X1", s_a, 96), ("X2", s_b, 288)):
@@ -115,4 +115,5 @@ def main():
             print(f"{nm:52s} {len(g):6d} {xs.mean():+8.3f} {xr.mean():+8.3f} [{np.percentile(bs,2.5):+6.2f},{np.percentile(bs,97.5):+6.2f}] {np.mean(xs>0)*100:5.0f}% {np.median(xs):+7.2f}")
 
 
-main()
+if __name__ == "__main__":
+    main()
