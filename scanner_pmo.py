@@ -131,4 +131,5 @@ def main():
     for r in C: show(r)
 
 
-main()
+if __name__ == "__main__":
+    main()

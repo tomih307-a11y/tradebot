@@ -1,0 +1,33 @@
+name: track
+on:
+  schedule:
+    - cron: "7 * * * *"
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-track.txt"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: track
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore state
+        run: |
+          git fetch origin track-results:tr 2>/dev/null && git show tr:tracker.json > tracker.json || echo "no previous state"
+      - name: Track
+        run: python3 track.py
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp tracker.json track.txt /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b track-results
+          git config user.name "bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "track" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin track-results
