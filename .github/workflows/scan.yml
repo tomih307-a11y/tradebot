@@ -9,11 +9,11 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: pip install -q numpy && python3 stops_test.py 2>&1 | tee scan.txt | tail -60
+        run: pip install -q numpy && python3 four_h_test.py 2>&1 | tee scan.txt | tail -60
       - name: Publish
         if: always()
         run: |
