@@ -9,7 +9,7 @@ import numpy as np
 import scanner as S
 import pmo_only as P
 
-P.DAYS = {"Min15": 180, "Min60": 130, "Min60": 420, "Day1": 300}
+P.DAYS = {"Min15": 180, "Min60": 400, "Hour4": 420, "Day1": 300}
 A1, A2, AS = 2 / 35, 2 / 20, 2 / 11
 
 
