@@ -15,6 +15,16 @@ TZ = 4
 dt = lambda x: datetime.fromtimestamp(x, timezone.utc) + timedelta(hours=TZ)
 
 
+def deals_buy_ratio(sym):
+    try:
+        d = S.get(f"https://contract.mexc.com/api/v1/contract/deals/{sym}?limit=100")["data"]
+        buy = sum(x["v"] for x in d if x["T"] == 1)
+        tot = sum(x["v"] for x in d) or 1
+        return buy / tot, d[0]["t"] - d[-1]["t"]
+    except Exception:
+        return None, None
+
+
 def evaluate(tr, now):
     if tr["status"] != "open":
         return
@@ -56,6 +66,13 @@ def main():
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(5) as ex:
         res = [r for r in ex.map(P.work, [(x["symbol"], 1) for x in tick]) if r]
+    snap = {x["symbol"]: float(x.get("holdVol") or 0) for x in tick}
+    oilog = json.load(open("oi_log.json")) if os.path.exists("oi_log.json") else []
+    prev = next((e for e in reversed(oilog) if now - e["t"] >= 50 * 60), None)           # snapshot at least 50 min old
+    oilog.append({"t": now, "oi": snap})
+    oilog = [e for e in oilog if now - e["t"] <= 14 * 86400][-400:]
+    json.dump(oilog, open("oi_log.json", "w"))
+    fund = {x["symbol"]: float(x.get("fundingRate") or 0) * 100 for x in tick}
     known = {(x["sym"], x["signal_t"]) for x in state}
     new = []
     for r in res:
@@ -65,7 +82,11 @@ def main():
         stop = r["stop"] if r["stop"] < entry else entry * 0.98
         d1 = r["d1"]
         tr = {"sym": r["sym"], "signal_t": r["t"], "detect_t": now, "entry": entry, "stop": min(stop, entry * 0.995), "group": "match" if d1 and d1["pos"] else "other",
-              "h1pos": bool(r["h1"] and r["h1"]["pos"]), "h4pos": bool(r["h4"] and r["h4"]["pos"]), "status": "open"}
+              "h1pos": bool(r["h1"] and r["h1"]["pos"]), "h4pos": bool(r["h4"] and r["h4"]["pos"]), "status": "open",
+              "oi": snap.get(r["sym"]), "funding": fund.get(r["sym"]),
+              "oi_chg": ((snap[r["sym"]] / prev["oi"][r["sym"]] - 1) * 100 if prev and prev["oi"].get(r["sym"]) else None)}
+        br, span = deals_buy_ratio(r["sym"])
+        tr["buy_ratio"], tr["deals_span_ms"] = br, span
         state.append(tr); new.append(tr)
     for tr in state:
         if tr["status"] == "open":
