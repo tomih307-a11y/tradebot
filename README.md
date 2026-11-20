@@ -8,3 +8,6 @@ LuxAlgo-style order blocks (CC BY-NC-SA 4.0, © LuxAlgo; personal use), suggeste
 
 Run on GitHub Actions: push a new timestamp to `.github/run-scan.txt`; results are published to branch `scan-results` (`scan.txt`).
 Research scripts: `build_dataset*.py`, `liquidity_test*.py`, `swing4h.py`, `analyze_rise.py`, `gainers_study.py`.
+
+## PMO-only scanner
+`scanner_pmo.py [hours]` — PMO(35,20,10) only: 15m zero-touch up, grouped by daily PMO above zero (matches the rule) or not, plus an 'about to touch' list, exit status (blue crossed below orange) and a 1.5xATR stop for display. Not a recommendation: in the 70-day test the best variant (zero-touch + daily PMO above zero) was ~break-even (+0.017R, CI contains zero).
