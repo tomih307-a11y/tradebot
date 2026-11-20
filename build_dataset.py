@@ -165,14 +165,21 @@ def work(sym):
             stp = max(min(stp, ent * 0.995), ent * 0.94)
             risk = ent - stp
             cost = 0.001 * ent / risk
-            for xn in ("A", "B"):
+            for xn in ("A", "B", "T12", "TR"):
                 R = None
+                hh = ent
                 for j in range(i + 1, i + 97):
-                    if lo[j] <= stp:
-                        R = -1.0; break
+                    lvl = stp
+                    if xn == "TR":
+                        lvl = max(stp, hh - 2 * atr[i])                      # trailing: highest high so far minus 2 ATR (uses highs before this bar)
+                    if lo[j] <= lvl:
+                        R = (lvl - ent) / risk; break
+                    hh = max(hh, hi[j])
                     if xn == "A" and c[j] < te[j] and (m[j] - g[j]) < 0:
                         R = (c[j] - ent) / risk; break
                     if xn == "B" and m[j] < g[j] and m[j - 1] >= g[j - 1]:
+                        R = (c[j] - ent) / risk; break
+                    if xn == "T12" and j == i + 48:
                         R = (c[j] - ent) / risk; break
                 if R is None:
                     R = (c[i + 96] - ent) / risk
