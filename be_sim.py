@@ -11,7 +11,14 @@ print(f"{'العملة':10s} {'المجموعة':8s} | {'فعلي (وقف أصل
 tot = {"C": 0.0, "A": 0.0, "B": 0.0}
 totp = {"C": 0.0, "A": 0.0, "B": 0.0}
 for tr in state:
-    d = P.kl(tr["sym"], "Min15", now)
+    d = None
+    for _ in range(5):
+        d = P.kl(tr["sym"], "Min15", now)
+        if d:
+            break
+        time.sleep(5)
+    if not d:
+        print("تعذّر جلب بيانات", tr["sym"]); continue
     t, hi, lo, c = d["time"], d["high"], d["low"], d["close"]
     p, ps = S.pmo(c)
     ent, stop = tr["entry"], tr["stop"]
