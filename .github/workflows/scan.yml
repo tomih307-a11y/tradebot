@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: (pip install -q numpy; L1=35 python3 pmo_fast.py; echo; echo =========; L1=4 python3 pmo_fast.py) 2>&1 | tee scan.txt | tail -80
+        run: python3 scanner_pmo.py 8 2>&1 | tee scan.txt | tail -90
       - name: Publish
         if: always()
         run: |
