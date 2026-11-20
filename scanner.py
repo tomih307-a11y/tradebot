@@ -23,10 +23,13 @@ def get(url):
 NON_SPOT = {"BINANCETICKER", "KAIKO", "ALLTICK", "INFOWAYCOMMON", "LIGHTER", "HYPERLIQUID"}
 
 
+STABLE = {"USDC", "USDT", "DAI", "FDUSD", "TUSD", "USDE", "PYUSD", "USD1", "USDD", "BUSD", "EURC", "XUSD", "USDG"}
+
+
 def is_crypto(detail):
     """Crypto = has at least one SPOT price source (MEXC, BINANCE, BITGET...), and is not a commodity-style name like GOLD(PAXG)."""
     spot = [o for o in detail.get("indexOrigin") or [] if not o.endswith("_FUTURE") and o not in NON_SPOT]
-    return bool(spot) and "(" not in (detail.get("baseCoinName") or "")
+    return bool(spot) and "(" not in (detail.get("baseCoinName") or "") and (detail.get("baseCoin") or (detail.get("symbol") or "").split("_")[0]).upper() not in STABLE
 
 
 def kl(sym, itv, days, now):
