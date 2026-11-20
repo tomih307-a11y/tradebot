@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: pip install -q numpy && python3 retest_test.py 2>&1 | tee scan.txt | tail -60
+        run: python3 probe_data.py 2>&1 | tee scan.txt | tail -120
       - name: Publish
         if: always()
         run: |
