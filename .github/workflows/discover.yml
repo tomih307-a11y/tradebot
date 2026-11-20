@@ -1,0 +1,29 @@
+name: discover
+on:
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-discover.txt"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install scikit-learn numpy pandas
+      - name: Build dataset
+        run: python3 build_dataset.py 2>&1 | tail -20
+      - name: Analyze
+        run: if [ -f analyze_dataset.py ]; then python3 analyze_dataset.py 2>&1 | tee discover.txt | tail -200; fi
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp discover.txt /tmp/out/ 2>/dev/null || true
+          ls -la dataset.json && gzip -c dataset.json > /tmp/out/dataset.json.gz || true
+          cd /tmp/out && git init -q && git checkout -q -b discover-results
+          git config user.name "bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "discover" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin discover-results
