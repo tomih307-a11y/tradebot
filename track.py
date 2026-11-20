@@ -58,7 +58,10 @@ def close(tr, R, why, px, ct):
 
 def main():
     now = int(time.time())
-    state = json.load(open("tracker.json")) if os.path.exists("tracker.json") else []
+    try:
+        state = json.load(open("tracker.json")) if os.path.exists("tracker.json") else []
+    except Exception:
+        state = []
     open_syms = {x["sym"] for x in state if x["status"] == "open"}
     detail = {x["symbol"]: x for x in S.get("https://contract.mexc.com/api/v1/contract/detail")["data"]}
     tick = [x for x in S.get("https://contract.mexc.com/api/v1/contract/ticker")["data"] if x["symbol"].endswith("_USDT") and x["symbol"] in detail
@@ -67,7 +70,10 @@ def main():
     with ThreadPoolExecutor(5) as ex:
         res = [r for r in ex.map(P.work, [(x["symbol"], 1) for x in tick]) if r]
     snap = {x["symbol"]: float(x.get("holdVol") or 0) for x in tick}
-    oilog = json.load(open("oi_log.json")) if os.path.exists("oi_log.json") else []
+    try:
+        oilog = json.load(open("oi_log.json")) if os.path.exists("oi_log.json") else []
+    except Exception:
+        oilog = []                                                   # empty or corrupt file: start a fresh snapshot log
     prev = next((e for e in reversed(oilog) if now - e["t"] >= 50 * 60), None)           # snapshot at least 50 min old
     oilog.append({"t": now, "oi": snap})
     oilog = [e for e in oilog if now - e["t"] <= 14 * 86400][-400:]

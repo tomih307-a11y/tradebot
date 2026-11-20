@@ -19,8 +19,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Restore state
         run: |
-          git fetch origin track-results:tr 2>/dev/null && git show tr:tracker.json > tracker.json || echo "no previous state"
-          git show tr:oi_log.json > oi_log.json || true
+          git fetch origin track-results:tr 2>/dev/null && git show tr:tracker.json > tracker.json 2>/dev/null || { rm -f tracker.json; echo "no previous state"; }
+          git show tr:oi_log.json > oi_log.json 2>/dev/null || rm -f oi_log.json
       - name: Track
         run: python3 track.py
       - name: Publish
