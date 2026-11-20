@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: python3 swing4h.py 2>&1 | tee scan.txt | tail -80
+        run: pip install -q numpy && python3 swing4h.py 2>&1 | tee scan.txt | tail -80
       - name: Publish
         if: always()
         run: |
