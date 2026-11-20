@@ -14,14 +14,14 @@ jobs:
       - uses: actions/checkout@v4
       - run: pip install scikit-learn numpy pandas
       - name: Build dataset
-        run: python3 build_dataset.py 2>&1 | tail -20
+        run: BASE=Min60 python3 build_dataset_b.py 2>&1 | tail -20
       - name: Analyze
         run: if [ -f analyze_dataset.py ]; then python3 analyze_dataset.py 2>&1 | tee discover.txt | tail -200; fi
       - name: Publish
         if: always()
         run: |
           mkdir /tmp/out && cp discover.txt /tmp/out/ 2>/dev/null || true
-          ls -la dataset.json && gzip -c dataset.json > /tmp/out/dataset.json.gz || true
+          ls -la dataset.json && gzip -c dataset.json > /tmp/out/dataset_h1.json.gz || true
           cd /tmp/out && git init -q && git checkout -q -b discover-results
           git config user.name "bot" && git config user.email "bot@example.com"
           git add -A && git commit -q -m "discover" || true
