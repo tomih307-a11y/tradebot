@@ -118,10 +118,10 @@ def main():
         lines.append("")
     lines.append("المفتوحة:")
     for x in sorted([x for x in state if x["status"] == "open"], key=lambda x: -x["detect_t"]):
-        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'} · دخول {x['entry']:.6g} الآن {x.get('now', x['entry']):.6g} · R حالي {x.get('open_R', 0):+.2f}")
+        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'} · دخول {x['entry']:.6g} → الآن {x.get('now', x['entry']):.6g} ({(x.get('now', x['entry']) / x['entry'] - 1) * 100:+.2f}%) · R حالي {x.get('open_R', 0):+.2f}")
     lines.append("\nآخر المغلقة:")
     for x in sorted([x for x in state if x["status"] == "closed"], key=lambda x: -x["closed_t"])[:25]:
-        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} → {dt(x['closed_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'} · {x['why']} · R {x['R']:+.2f}")
+        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} → {dt(x['closed_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'} · {x['why']} · دخول {x['entry']:.6g} → خروج {x['exit_px']:.6g} ({(x['exit_px'] / x['entry'] - 1) * 100:+.2f}%) · R {x['R']:+.2f}")
     open("track.txt", "w").write("\n".join(lines))
     print("\n".join(lines))
 
