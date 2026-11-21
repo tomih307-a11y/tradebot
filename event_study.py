@@ -11,9 +11,9 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import scanner as S
-import pmo_only as P
+import scanner_pmo as P
 
-P.DAYS = {"Min15": 180, "Min60": 130, "Hour4": 300, "Day1": 300}
+P.DAYS.update({"Min15": 180, "Min60": 130, "Hour4": 300, "Day1": 300})
 ETF = P.ETF | {"USDC", "USDT", "DAI", "FDUSD", "TUSD", "USDE", "PYUSD", "USD1", "USDD", "BUSD", "EURC", "XUSD", "USDG"}
 NAN = float("nan")
 BTC = {}
