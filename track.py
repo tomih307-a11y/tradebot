@@ -61,11 +61,11 @@ def evaluate(tr, now):
 
 
 def peaks(tr, now):
-    """Farthest prices after entry: during the trade (entry -> exit/now) and since entry until now."""
+    """Farthest prices after entry, 'second wave' flags at the signal bar, and the wide-stop alternative (stop 10%, hold 24h)."""
     d = P.kl(tr["sym"], "Min15", now)
     if not d:
         return
-    t, hi, lo = d["time"], d["high"], d["low"]
+    t, hi, lo, c = d["time"], d["high"], d["low"], d["close"]
     end = tr.get("closed_t", now)
     during = [j for j in range(len(t)) if t[j] >= tr["detect_t"] and t[j] < end]
     since = [j for j in range(len(t)) if t[j] >= tr["detect_t"]]
@@ -76,6 +76,29 @@ def peaks(tr, now):
     if since:
         j = max(since, key=lambda k: hi[k])
         tr["peak_since"], tr["peak_since_t"] = hi[j], t[j]
+    if "w3" not in tr:                                              # flags measured at the signal bar (past data only)
+        i = next((k for k in range(len(t)) if t[k] == tr["signal_t"]), None)
+        if i is not None and i >= 700:
+            trr = [hi[k] - lo[k] if k == 0 else max(hi[k] - lo[k], abs(hi[k] - c[k - 1]), abs(lo[k] - c[k - 1])) for k in range(i + 1)]
+            atr = S.ema(trr, 14)
+            hot = atr[i] / (st.median(atr[max(0, i - 960):i]) or 1e-12) >= 1.2
+            week = c[i] / c[i - 672] - 1 > 0
+            pull = (c[i] / max(hi[i - 95:i + 1]) - 1) * 100 <= -6
+            d1 = tr["group"] == "match"
+            tr["hot"], tr["week"], tr["pull"] = bool(hot), bool(week), bool(pull)
+            tr["w3"] = bool(d1 and hot and week)
+            tr["w4"] = bool(d1 and hot and week and pull)
+    if "alt_pct" not in tr and now - tr["detect_t"] >= 24 * 3600:    # wide-stop alternative: stop 10% below entry, exit after 24h
+        out = None
+        for j in range(len(t)):
+            if t[j] < tr["detect_t"]:
+                continue
+            if lo[j] <= tr["entry"] * 0.90:
+                out = tr["entry"] * 0.90; break
+            if t[j] + 900 - tr["detect_t"] >= 24 * 3600:
+                out = c[j]; break
+        if out is not None:
+            tr["alt_pct"] = (out / tr["entry"] - 1) * 100 - 0.1
 
 
 def close(tr, R, why, px, ct):
@@ -154,6 +177,19 @@ def main():
             lines.append(f"  تطابق + {nm}: مغلقة {len(cl)} · رابحة {sum(1 for r in Rs if r > 0)} · متوسط R {st.mean(Rs):+.2f} · مجموع R {sum(Rs):+.2f} · مفتوحة {len(op)}")
         else:
             lines.append(f"  تطابق + {nm}: مغلقة 0 · مفتوحة {len(op)}")
+    lines.append("\nاختبار الموجة الثانية (مجموعات متراكبة داخل التطابق):")
+    for key, nm in (("w3", "W3: تطابق + متقلبة (ATR≥1.2×) + صاعدة أسبوعاً"), ("w4", "W4: W3 + تراجع ≥6% عن قمة 24س")):
+        g = [x for x in state if x.get(key)]
+        cl = [x for x in g if x["status"] == "closed"]
+        op = [x for x in g if x["status"] == "open"]
+        alt = [x["alt_pct"] for x in g if "alt_pct" in x]
+        txt = f"  {nm}: {len(g)} إشارة · مغلقة {len(cl)} · مفتوحة {len(op)}"
+        if cl:
+            Rs = [x["R"] for x in cl]
+            txt += f" · رابحة {sum(1 for r in Rs if r > 0)} · متوسط R {st.mean(Rs):+.2f}"
+        if alt:
+            txt += f" · البديل (وقف 10% وخروج بعد 24س): {len(alt)} صفقة، متوسط {st.mean(alt):+.2f}%"
+        lines.append(txt)
     lines.append("")
     if new:
         lines.append("رُصدت الآن:")
@@ -165,7 +201,7 @@ def main():
     for x in sorted([x for x in state if x["status"] == "open"], key=lambda x: -x["detect_t"]):
         pk = x.get("peak_during", x["entry"])
         nw = x.get("now", x["entry"])
-        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'}{(' · BTC24 %+.1f%%' % x['btc24']) if x.get('btc24') is not None else ''} · دخول {x['entry']:.6g} ← أبعد سعر {pk:.6g} ({pc(pk, x['entry']):+.2f}%" + (f" عند {dt(x['peak_during_t']):%d %H:%M}" if 'peak_during_t' in x else "") + f") ← الآن {nw:.6g} ({pc(nw, x['entry']):+.2f}%) · R حالي {x.get('open_R', 0):+.2f}")
+        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'}{' · W4' if x.get('w4') else (' · W3' if x.get('w3') else '')}{(' · BTC24 %+.1f%%' % x['btc24']) if x.get('btc24') is not None else ''} · دخول {x['entry']:.6g} ← أبعد سعر {pk:.6g} ({pc(pk, x['entry']):+.2f}%" + (f" عند {dt(x['peak_during_t']):%d %H:%M}" if 'peak_during_t' in x else "") + f") ← الآن {nw:.6g} ({pc(nw, x['entry']):+.2f}%) · R حالي {x.get('open_R', 0):+.2f}")
     lines.append("\nآخر المغلقة (دخول ← أبعد سعر خلال الصفقة ← الخروج | أبعد سعر منذ الدخول حتى الآن):")
     for x in sorted([x for x in state if x["status"] == "closed"], key=lambda x: -x["closed_t"])[:25]:
         pk = x.get("peak_during", x["exit_px"])
