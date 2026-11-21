@@ -13,7 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: python3 coin_pmo.py BLESS 2>&1 | tee scan.txt | tail -60
+        run: |
+          git fetch origin track-results:tr && git show tr:tracker.json > tracker.json
+          pip install -q numpy
+          BASE=Min15 python3 feat_tracked.py 2>&1 | tail -5 && cp feat_tracked.json scan.txt
       - name: Publish
         if: always()
         run: |
