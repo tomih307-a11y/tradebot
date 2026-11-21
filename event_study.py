@@ -55,7 +55,7 @@ def work(sym):
         for i in idxs:
             ent, tc = c[i], t[i] + 900
             row = {"sym": sym, "t": t[i], "event": lab}
-            atr_med = st.median(atr[i - 960:i]) or 1e-12
+            atr_med = st.median(atr[max(0, i - 960):i]) or 1e-12
             row["atr_pct"] = atr[i] / ent * 100
             row["atr_ratio"] = atr[i] / atr_med
             rng24 = max(hi[i - 95:i + 1]) / min(lo[i - 95:i + 1]) - 1
