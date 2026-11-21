@@ -17,7 +17,7 @@ jobs:
       - name: Publish
         if: always()
         run: |
-          mkdir /tmp/out && cp scan.txt /tmp/out/ 2>/dev/null || true
+          mkdir /tmp/out && cp scan.txt /tmp/out/ 2>/dev/null; gzip -c event_rows.json > /tmp/out/event_rows.json.gz 2>/dev/null || true
           cd /tmp/out && git init -q && git checkout -q -b scan-results
           git config user.name "bot" && git config user.email "bot@example.com"
           git add -A && git commit -q -m "scan" || true
