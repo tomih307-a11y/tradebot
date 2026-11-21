@@ -15,6 +15,14 @@ TZ = 4
 dt = lambda x: datetime.fromtimestamp(x, timezone.utc) + timedelta(hours=TZ)
 
 
+def btc24_at(btc, ts):
+    t, c = btc["time"], btc["close"]
+    j = max((k for k in range(len(t)) if t[k] + 900 <= ts), default=None)
+    if j is None or j < 96:
+        return None
+    return (c[j] / c[j - 96] - 1) * 100
+
+
 def deals_buy_ratio(sym):
     try:
         d = S.get(f"https://contract.mexc.com/api/v1/contract/deals/{sym}?limit=100")["data"]
@@ -97,6 +105,10 @@ def main():
     oilog = [e for e in oilog if now - e["t"] <= 14 * 86400][-400:]
     json.dump(oilog, open("oi_log.json", "w"))
     fund = {x["symbol"]: float(x.get("fundingRate") or 0) * 100 for x in tick}
+    btc = P.kl("BTC_USDT", "Min15", now)
+    for x in state:                                              # backfill / compute BTC 24h return at each trade's detection time
+        if x.get("btc24") is None and btc:
+            x["btc24"] = btc24_at(btc, x["detect_t"])
     known = {(x["sym"], x["signal_t"]) for x in state}
     new = []
     for r in res:
@@ -107,7 +119,7 @@ def main():
         d1 = r["d1"]
         tr = {"sym": r["sym"], "signal_t": r["t"], "detect_t": now, "entry": entry, "stop": min(stop, entry * 0.995), "group": "match" if d1 and d1["pos"] else "other",
               "h1pos": bool(r["h1"] and r["h1"]["pos"]), "h4pos": bool(r["h4"] and r["h4"]["pos"]), "status": "open",
-              "oi": snap.get(r["sym"]), "funding": fund.get(r["sym"]),
+              "oi": snap.get(r["sym"]), "funding": fund.get(r["sym"]), "btc24": btc24_at(btc, now) if btc else None,
               "oi_chg": ((snap[r["sym"]] / prev["oi"][r["sym"]] - 1) * 100 if prev and prev["oi"].get(r["sym"]) else None)}
         br, span = deals_buy_ratio(r["sym"])
         tr["buy_ratio"], tr["deals_span_ms"] = br, span
@@ -131,6 +143,17 @@ def main():
             lines.append(f"{nm}: مغلقة {len(cl)} · رابحة {sum(1 for r in Rs if r > 0)} ({sum(1 for r in Rs if r > 0)/len(Rs)*100:.0f}%) · متوسط R {st.mean(Rs):+.2f} · مجموع R {sum(Rs):+.2f} · مفتوحة {len(op)}")
         else:
             lines.append(f"{nm}: مغلقة 0 · مفتوحة {len(op)}")
+    mt = [x for x in state if x["group"] == "match" and x.get("btc24") is not None]
+    lines.append("\nاختبار إضافي: مجموعة التطابق مقسّمة حسب حركة بيتكوين خلال 24 ساعة قبل الإشارة (فرضية مستخرجة من الأرقام، تُقاس هنا فقط):")
+    for flag, nm in ((True, "بيتكوين هابط (> -1%)"), (False, "بيتكوين غير هابط")):
+        g = [x for x in mt if (x["btc24"] <= -1.0) == flag]
+        cl = [x for x in g if x["status"] == "closed"]
+        op = [x for x in g if x["status"] == "open"]
+        if cl:
+            Rs = [x["R"] for x in cl]
+            lines.append(f"  تطابق + {nm}: مغلقة {len(cl)} · رابحة {sum(1 for r in Rs if r > 0)} · متوسط R {st.mean(Rs):+.2f} · مجموع R {sum(Rs):+.2f} · مفتوحة {len(op)}")
+        else:
+            lines.append(f"  تطابق + {nm}: مغلقة 0 · مفتوحة {len(op)}")
     lines.append("")
     if new:
         lines.append("رُصدت الآن:")
@@ -142,7 +165,7 @@ def main():
     for x in sorted([x for x in state if x["status"] == "open"], key=lambda x: -x["detect_t"]):
         pk = x.get("peak_during", x["entry"])
         nw = x.get("now", x["entry"])
-        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'} · دخول {x['entry']:.6g} ← أبعد سعر {pk:.6g} ({pc(pk, x['entry']):+.2f}%" + (f" عند {dt(x['peak_during_t']):%d %H:%M}" if 'peak_during_t' in x else "") + f") ← الآن {nw:.6g} ({pc(nw, x['entry']):+.2f}%) · R حالي {x.get('open_R', 0):+.2f}")
+        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'}{(' · BTC24 %+.1f%%' % x['btc24']) if x.get('btc24') is not None else ''} · دخول {x['entry']:.6g} ← أبعد سعر {pk:.6g} ({pc(pk, x['entry']):+.2f}%" + (f" عند {dt(x['peak_during_t']):%d %H:%M}" if 'peak_during_t' in x else "") + f") ← الآن {nw:.6g} ({pc(nw, x['entry']):+.2f}%) · R حالي {x.get('open_R', 0):+.2f}")
     lines.append("\nآخر المغلقة (دخول ← أبعد سعر خلال الصفقة ← الخروج | أبعد سعر منذ الدخول حتى الآن):")
     for x in sorted([x for x in state if x["status"] == "closed"], key=lambda x: -x["closed_t"])[:25]:
         pk = x.get("peak_during", x["exit_px"])
