@@ -9,14 +9,11 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: |
-          git fetch origin track-results:tr && git show tr:tracker.json > tracker.json
-          pip install -q numpy
-          BASE=Min15 python3 feat_tracked.py 2>&1 | tail -5 && cp feat_tracked.json scan.txt
+        run: pip install -q numpy && python3 event_study.py 2>&1 | tee scan.txt | tail -60
       - name: Publish
         if: always()
         run: |
