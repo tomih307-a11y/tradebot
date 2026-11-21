@@ -21,12 +21,13 @@ jobs:
         run: |
           git fetch origin track-results:tr 2>/dev/null && git show tr:tracker.json > tracker.json 2>/dev/null || { rm -f tracker.json; echo "no previous state"; }
           git show tr:oi_log.json > oi_log.json 2>/dev/null || rm -f oi_log.json
+          git show tr:journal.json > journal.json 2>/dev/null || rm -f journal.json
       - name: Track
         run: python3 track.py
       - name: Publish
         if: always()
         run: |
-          mkdir /tmp/out && cp tracker.json track.txt oi_log.json /tmp/out/ 2>/dev/null || true
+          mkdir /tmp/out && cp tracker.json track.txt oi_log.json journal.json /tmp/out/ 2>/dev/null || true
           cd /tmp/out && git init -q && git checkout -q -b track-results
           git config user.name "bot" && git config user.email "bot@example.com"
           git add -A && git commit -q -m "track" || true

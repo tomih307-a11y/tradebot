@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, timezone
 
 import scanner as S
 import scanner_pmo as P
+import journal as J
+import paper_account as PA
 
 TZ = 4
 dt = lambda x: datetime.fromtimestamp(x, timezone.utc) + timedelta(hours=TZ)
@@ -154,6 +156,12 @@ def main():
         if tr["status"] == "open" or now - tr.get("closed_t", 0) < 48 * 3600 or "peak_since" not in tr:
             peaks(tr, now)
     json.dump(state, open("tracker.json", "w"), ensure_ascii=False)
+    try:
+        journal = json.load(open("journal.json")) if os.path.exists("journal.json") else []
+    except Exception:
+        journal = []
+    J.update(journal, state)
+    json.dump(journal, open("journal.json", "w"), ensure_ascii=False)
 
     lines = [f"متابعة PMO (لمس الصفر 15د) · {dt(now):%d %H:%M} UTC+{TZ} · دخول افتراضي بسعر لحظة الرصد · وقف 1.5×ATR · خروج: وقف | الأزرق يقطع البرتقالي | 24 ساعة · تكلفة 0.1%"]
     lines.append("هذه قياس وليس توصية.\n")
@@ -190,6 +198,12 @@ def main():
         if alt:
             txt += f" · البديل (وقف 10% وخروج بعد 24س): {len(alt)} صفقة، متوسط {st.mean(alt):+.2f}%"
         lines.append(txt)
+    lines.append("\nالحساب الورقي (1000$، مخاطرة 1% من الرصيد الحالي، أقصى 5 صفقات، رافعة ≤5×، رسوم+انزلاق+تمويل، فرامل هبوط):")
+    for g_, nm in (("match", "تطابق"), ("w3", "W3"), ("w4", "W4"), ("all", "الكل (تطابق + مقارنة)")):
+        a = PA.simulate(state, 1.0, 5, g_)
+        lines.append(f"  {nm}: صفقات {a['n']} · الرصيد {a['equity']:.2f}$ ({(a['equity']/1000-1)*100:+.2f}%) · مع المفتوحة {a['marked']:.2f}$ ({(a['marked']/1000-1)*100:+.2f}%) · أقصى هبوط {a['maxdd']*100:.1f}% · مفتوحة {a['open']} · تخطّي {a['skipped']}")
+    lines.append("\nسجل التأمل (الذاكرة): نتائج الصفقات المغلقة حسب الوسم التلقائي:")
+    lines += J.summary(journal)
     lines.append("")
     if new:
         lines.append("رُصدت الآن:")
