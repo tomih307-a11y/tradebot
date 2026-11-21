@@ -52,6 +52,24 @@ def evaluate(tr, now):
     tr["open_R"] = (c[-1] - tr["entry"]) / risk - cost
 
 
+def peaks(tr, now):
+    """Farthest prices after entry: during the trade (entry -> exit/now) and since entry until now."""
+    d = P.kl(tr["sym"], "Min15", now)
+    if not d:
+        return
+    t, hi, lo = d["time"], d["high"], d["low"]
+    end = tr.get("closed_t", now)
+    during = [j for j in range(len(t)) if t[j] >= tr["detect_t"] and t[j] < end]
+    since = [j for j in range(len(t)) if t[j] >= tr["detect_t"]]
+    if during:
+        j = max(during, key=lambda k: hi[k])
+        tr["peak_during"], tr["peak_during_t"] = hi[j], t[j]
+        tr["trough_during"] = min(lo[k] for k in during)
+    if since:
+        j = max(since, key=lambda k: hi[k])
+        tr["peak_since"], tr["peak_since_t"] = hi[j], t[j]
+
+
 def close(tr, R, why, px, ct):
     tr.update({"status": "closed", "R": R, "why": why, "exit_px": px, "closed_t": ct})
 
@@ -97,6 +115,9 @@ def main():
     for tr in state:
         if tr["status"] == "open":
             evaluate(tr, now)
+    for tr in state:
+        if tr["status"] == "open" or now - tr.get("closed_t", 0) < 48 * 3600 or "peak_since" not in tr:
+            peaks(tr, now)
     json.dump(state, open("tracker.json", "w"), ensure_ascii=False)
 
     lines = [f"متابعة PMO (لمس الصفر 15د) · {dt(now):%d %H:%M} UTC+{TZ} · دخول افتراضي بسعر لحظة الرصد · وقف 1.5×ATR · خروج: وقف | الأزرق يقطع البرتقالي | 24 ساعة · تكلفة 0.1%"]
@@ -116,12 +137,22 @@ def main():
         for x in new:
             lines.append(f"  + {x['sym'][:-5]}USDT.P · {'تطابق' if x['group']=='match' else 'مقارنة'} · دخول {x['entry']:.6g} · وقف {x['stop']:.6g} (بعد {(x['entry']/x['stop']-1)*100:.1f}%)")
         lines.append("")
-    lines.append("المفتوحة:")
+    pc = lambda a, b: (a / b - 1) * 100
+    lines.append("المفتوحة (سعر الدخول ← أبعد سعر وصله والنسبة ← السعر الآن):")
     for x in sorted([x for x in state if x["status"] == "open"], key=lambda x: -x["detect_t"]):
-        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'} · دخول {x['entry']:.6g} → الآن {x.get('now', x['entry']):.6g} ({(x.get('now', x['entry']) / x['entry'] - 1) * 100:+.2f}%) · R حالي {x.get('open_R', 0):+.2f}")
-    lines.append("\nآخر المغلقة:")
+        pk = x.get("peak_during", x["entry"])
+        nw = x.get("now", x["entry"])
+        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'} · دخول {x['entry']:.6g} ← أبعد سعر {pk:.6g} ({pc(pk, x['entry']):+.2f}%" + (f" عند {dt(x['peak_during_t']):%d %H:%M}" if 'peak_during_t' in x else "") + f") ← الآن {nw:.6g} ({pc(nw, x['entry']):+.2f}%) · R حالي {x.get('open_R', 0):+.2f}")
+    lines.append("\nآخر المغلقة (دخول ← أبعد سعر خلال الصفقة ← الخروج | أبعد سعر منذ الدخول حتى الآن):")
     for x in sorted([x for x in state if x["status"] == "closed"], key=lambda x: -x["closed_t"])[:25]:
-        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} → {dt(x['closed_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'} · {x['why']} · دخول {x['entry']:.6g} → خروج {x['exit_px']:.6g} ({(x['exit_px'] / x['entry'] - 1) * 100:+.2f}%) · R {x['R']:+.2f}")
+        pk = x.get("peak_during", x["exit_px"])
+        ps_ = x.get("peak_since")
+        lines.append(f"  {x['sym'][:-5]}USDT.P · {dt(x['detect_t']):%d %H:%M} → {dt(x['closed_t']):%d %H:%M} · {'تطابق' if x['group']=='match' else 'مقارنة'} · {x['why']} · دخول {x['entry']:.6g} ← أبعد {pk:.6g} ({pc(pk, x['entry']):+.2f}%) ← خروج {x['exit_px']:.6g} ({pc(x['exit_px'], x['entry']):+.2f}%) · R {x['R']:+.2f}"
+                     + (f" | منذ الدخول أبعد سعر {ps_:.6g} ({pc(ps_, x['entry']):+.2f}%)" if ps_ else ""))
+    for grp, nm in (("match", "تطابق"), ("other", "مقارنة")):
+        g = [x for x in state if x["group"] == grp and "peak_during" in x]
+        if g:
+            lines.append(f"\nمتوسط أبعد صعود خلال الصفقة ({nm}، {len(g)} صفقة): {st.mean(pc(x['peak_during'], x['entry']) for x in g):+.2f}% · متوسط أبعد هبوط {st.mean(pc(x['trough_during'], x['entry']) for x in g):+.2f}%")
     open("track.txt", "w").write("\n".join(lines))
     print("\n".join(lines))
 
