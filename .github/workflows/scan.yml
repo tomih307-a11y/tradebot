@@ -13,8 +13,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: python3 alert_find.py ARIA_USDT 0.06842 17 0.07046 17:02:47 2>&1 | tee scan.txt | tail -40
-      - name: Publish
+        run: |
+          date -u
+          python3 - <<'PY'
+          import time, scanner as S
+          from datetime import datetime, timedelta, timezone
+          now=int(time.time())
+          out={k:[] for k in ('time','open','high','low','close')}
+          a=now-150*86400
+          while a<now:
+              b=min(a+3600*1000,now)
+              d=S.get(f'https://contract.mexc.com/api/v1/contract/kline/ARIA_USDT?interval=Min60&start={a}&end={b}')['data']
+              for k in out: out[k]+=d[k]
+              a=b
+          print('candles',len(out['time']), 'last', (datetime.fromtimestamp(out['time'][-1],timezone.utc)+timedelta(hours=4)).strftime('%d %b %H:%M'), 'close', out['close'][-1])
+          for i in range(len(out['time'])):
+              ret=(out['close'][i]/out['open'][i]-1)*100
+              if ret<=-15:
+                  t=datetime.fromtimestamp(out['time'][i]+3600,timezone.utc)+timedelta(hours=4)
+              print('') if False else None
+              if ret<=-15:
+                  print('هبوط ساعة', round(ret,1), 'إغلاق', t.strftime('%d %b %H:%M'), 'سعر الإغلاق', out['close'][i], 'فتح', out['open'][i])
+          print('--- آخر 8 شموع')
+          for i in range(len(out['time'])-8,len(out['time'])):
+              t=datetime.fromtimestamp(out['time'][i],timezone.utc)+timedelta(hours=4)
+              print(t.strftime('%d %H:%M'), 'open',out['open'][i],'close',out['close'][i])
+          PY
+                - name: Publish
         if: always()
         run: |
           mkdir /tmp/out && cp scan.txt /tmp/out/ 2>/dev/null; gzip -c event_rows.json > /tmp/out/event_rows.json.gz 2>/dev/null || true
