@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: pip install -q numpy && python3 tournament.py 2>&1 | tee scan.txt | tail -80
+        run: python3 alert_check.py 2>&1 | tee scan.txt | tail -40
       - name: Publish
         if: always()
         run: |
