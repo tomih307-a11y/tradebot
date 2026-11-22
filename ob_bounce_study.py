@@ -47,10 +47,16 @@ def fetch(sym, itv, step, a, b_end):
 class TF:
     def __init__(self, d, per):
         self.d, self.per = d, per
-        _, self.snaps = LX.run(d["open"], d["high"], d["low"], d["close"])
+        if d is None or len(d["time"]) < 250:
+            self.d = {"time": [], "open": [], "high": [], "low": [], "close": []} if d is None else d
+            self.snaps = [[] for _ in self.d["time"]]
+        else:
+            _, self.snaps = LX.run(d["open"], d["high"], d["low"], d["close"])
 
     def idx(self, ts):
         t = self.d["time"]
+        if not t:
+            return -1
         lo_, hi_ = 0, len(t)
         while lo_ < hi_:
             mid = (lo_ + hi_) // 2
@@ -63,7 +69,7 @@ class TF:
     def hit(self, ts, price):
         """Bullish OB alive just before the bar that contains ts, that the price low touched/held (inside the zone, or a wick up to 1% under its low)."""
         i = self.idx(ts)
-        if i < 2:
+        if i < 2 or i >= len(self.snaps):
             return None
         best = None
         for ob in self.snaps[i - 1]:
@@ -115,6 +121,8 @@ for di, sym, close, aprice, hhmmss, prob, r1, r4, vol, drop in A:
     hh, mm, ss = (int(x) for x in hhmmss.split(":"))
     a0 = int(datetime.fromtimestamp(cands[0][2], timezone.utc).replace(minute=mm, second=ss).timestamp())
     m = P[sym]["15m"]
+    if not m or not m["time"]:
+        continue
     idx = [i for i in range(len(m["time"])) if m["time"][i] >= (a0 // 900 + 1) * 900]
     pk = max(idx, key=lambda i: m["high"][i])
     seg = [i for i in idx if i <= pk]
