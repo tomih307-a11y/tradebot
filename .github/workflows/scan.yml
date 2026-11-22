@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: pip install -q numpy && python3 ob_bounce_study.py 2>&1 | tee scan.txt | tail -90
+        run: pip install -q numpy && python3 bounce_places.py 2>&1 | tee scan.txt | tail -60
       - name: Publish
         if: always()
         run: |
