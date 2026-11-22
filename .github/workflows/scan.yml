@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: python3 aria_probe.py 2>&1 | tee scan.txt | tail -40
+        run: (python3 alert_find.py ARIA_USDT 0.06842 18 0.07046 18:02:47; echo; echo =========; python3 alert_check.py) 2>&1 | tee scan.txt | tail -60
       - name: Publish
         if: always()
         run: |

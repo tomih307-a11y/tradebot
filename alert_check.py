@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import scanner as S
 
 SYM, ALERT_PRICE = "JCT_USDT", 0.007159
-ALERT = datetime(2026, 10, 24, 23, 3, 10, tzinfo=timezone.utc) - timedelta(hours=4)      # 23:03:10 UTC+4
+ALERT = datetime(2026, 10, 24, 23, 3, 10, tzinfo=timezone.utc) - timedelta(hours=3)      # radar time is UTC+3
 dt = lambda x: datetime.fromtimestamp(x, timezone.utc) + timedelta(hours=4)
 now = int(time.time())
 a0 = int(ALERT.timestamp())
