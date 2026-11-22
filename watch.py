@@ -97,11 +97,16 @@ def main():
     n_sel = sum(1 for r in last["rows"] if r["sel"])
     L.append(f"مراقبة العملات · {dt4(now):%d %b %H:%M} (UTC+4) · لقطات محفوظة: {len(snaps)} · آخر لقطة {dt4(last['t']):%d %b %H:%M}")
     L.append(f"الاختيار: عملات كريبتو على MEXC الآجلة (حجم 24س ≥ 1M$) ارتفعت +1% فأكثر خلال 24 ساعة، مرتبة حسب حجم التداول، أعلى {TOPN}. الباقي ضابط. (تجربة مراقبة وليست توصية)\n")
-    cur = sorted([o for o in res if o["snap"] == last["t"] and o["sel"]], key=lambda o: o["rank"])
-    L.append(f"== المراقَبة الآن (لقطة {dt4(last['t']):%d %b %H:%M}، عمرها {(now-last['t'])/3600:.1f} ساعة): {len(cur)} عملة")
-    L.append(f"{'#':>3s} {'العملة':10s} {'حجم 24س':>9s} {'ارتفاع 24س وقت الاختيار':>22s} {'سعر الاختيار':>11s} | {'أبعد سعر منذئذ':>14s} {'متى':>13s} | {'الآن':>8s}")
-    for o in cur:
-        L.append(f"{o['rank']:3d} {o['sym'][:-5]:10s} {o['turn']/1e6:8.1f}M {o['chg']:+21.1f}% {o['p0']:11.6g} | {o['all']:+13.1f}% {dt4(o['peak_t']):%d %H:%M} | {(o['now']/o['p0']-1)*100:+7.1f}%")
+    ev = {(o["snap"], o["sym"]): o for o in res}
+    cur_rows = sorted([r for r in last["rows"] if r["sel"]], key=lambda r: r["rank"])
+    L.append(f"== المراقَبة الآن (لقطة {dt4(last['t']):%d %b %H:%M}، عمرها {(now-last['t'])/3600:.1f} ساعة): {len(cur_rows)} عملة من {len(last['rows'])} في القائمة العامة")
+    L.append(f"{'#':>3s} {'العملة':10s} {'حجم 24س':>9s} {'ارتفاع 24س وقت الاختيار':>22s} {'سعر الاختيار':>12s} | {'أبعد سعر منذئذ':>14s} {'متى':>13s} | {'الآن':>8s}")
+    for r in cur_rows:
+        o = ev.get((last["t"], r["sym"]))
+        if o:
+            L.append(f"{r['rank']:3d} {r['sym'][:-5]:10s} {r['turn']/1e6:8.1f}M {r['chg']:+21.1f}% {r['price']:12.6g} | {o['all']:+13.1f}% {dt4(o['peak_t']):%d %H:%M} | {(o['now']/r['price']-1)*100:+7.1f}%")
+        else:
+            L.append(f"{r['rank']:3d} {r['sym'][:-5]:10s} {r['turn']/1e6:8.1f}M {r['chg']:+21.1f}% {r['price']:12.6g} | {'—':>14s} {'—':>13s} | {'—':>8s}")
     boom = sorted([o for o in res if o["all"] is not None and o["all"] >= 10], key=lambda o: -o["all"])
     L.append(f"\n== أيها «انفجر» (ارتفع ≥+10% عن سعر اللقطة في أي لقطة): {len(boom)}")
     for o in boom[:25]:
