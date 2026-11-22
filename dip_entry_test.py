@@ -145,3 +145,25 @@ for r in best:
     bc[r[6]] = bc.get(r[6], 0) + r[3]
 tot = sum(bc.values())
 print("تركّز عملات (C1 + وقف متحرك): ", ", ".join(f"{k[:-5]} {v/tot*100:.0f}%" for k, v in sorted(bc.items(), key=lambda kv: -kv[1])[:6]) if tot > 0 else "المجموع سالب", "| عدد العملات:", len({r[6] for r in best}))
+
+print("\n== فحص المتانة: بعد إقصاء أكبر العملات مساهمة، وحسب الشهر")
+from collections import defaultdict
+for cf, ex in (("C1", "XT"), ("C1", "X25"), ("C1", "X48"), ("C0", "XT")):
+    g = [r for r in rows if r[0] == cf and r[1] == ex]
+    bc = defaultdict(float)
+    for r in g:
+        bc[r[6]] += r[3]
+    order = [k for k, _ in sorted(bc.items(), key=lambda kv: -kv[1])]
+    allm = np.mean([r[3] for r in g])
+    out = [f"{cf}/{ex}: n={len(g)} متوسط {allm:+.2f}%"]
+    for k in (1, 3, 5, 10):
+        drop = set(order[:k])
+        h = [r[3] for r in g if r[6] not in drop]
+        out.append(f"بدون أعلى {k}: {np.mean(h):+.2f}% (n={len(h)})")
+    pos_coins = sum(1 for v in bc.values() if v > 0)
+    out.append(f"عملات رابحة {pos_coins} من {len(bc)}")
+    print(" | ".join(out))
+    bym = defaultdict(list)
+    for r in g:
+        bym[datetime.fromtimestamp(r[2], timezone.utc).strftime("%Y-%m")].append(r[3])
+    print("   شهرياً: " + " · ".join(f"{k}: {np.mean(v):+.2f}% ({len(v)})" for k, v in sorted(bym.items())))
