@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: (python3 alert_find.py Q_USDT 0.067381 19 0.068146 19:02:56 -15.3 -20.0; echo; echo =========; python3 alert_find.py AGT_USDT 0.05746 9 0.05751 09:02:48 -0.9 -5.7) 2>&1 | tee scan.txt | tail -70
+        run: (python3 alert_find.py CLAUDIA_USDT 0.002848 11 0.002866 11:02:48 -7.3 -10.6; echo; echo =========; python3 alert_table.py) 2>&1 | tee scan.txt | tail -70
       - name: Publish
         if: always()
         run: |
