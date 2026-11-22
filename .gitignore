@@ -6,3 +6,4 @@ liquidity_rows.json
 __pycache__/
 *.pyc
 journal.json
+watch.json
