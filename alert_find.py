@@ -4,7 +4,8 @@ import time
 from datetime import datetime, timedelta, timezone
 import scanner as S
 
-SYM, HOUR_CLOSE, HOUR, ALERT_PRICE, SECOND = sys.argv[1], float(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4]), sys.argv[5]     # SECOND = HH:MM:SS of the price quote
+SYM, HOUR_CLOSE, HOUR, ALERT_PRICE, SECOND = sys.argv[1], float(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4]), sys.argv[5]
+EXP1, EXP4 = float(sys.argv[6]), float(sys.argv[7])      # radar: last-hour % and last-4-hours %     # SECOND = HH:MM:SS of the price quote
 dt = lambda x: datetime.fromtimestamp(x, timezone.utc) + timedelta(hours=4)
 now = int(time.time())
 
@@ -39,13 +40,14 @@ for i in range(1, len(h1["time"])):
     close_t = h1["time"][i] + 3600
     if dt(close_t).hour == HOUR % 24 and dt(close_t).minute == 0 and abs(h1["close"][i] / HOUR_CLOSE - 1) < 0.003:
         ret = (h1["close"][i] / h1["open"][i] - 1) * 100
-        cands.append((close_t, h1["close"][i], ret))
+        ret4 = (h1["close"][i] / h1["open"][i - 3] - 1) * 100 if i >= 3 else 0.0
+        cands.append((close_t, h1["close"][i], ret, ret4))
 print(f"{SYM}: شموع الساعة التي يغلق عند {HOUR}:00 (UTC+4) بسعر قريب من {HOUR_CLOSE}: {len(cands)}")
-for ct, cl, ret in cands:
-    print(f"  {dt(ct):%d %b %Y %H:%M} إغلاق {cl} · حركة الساعة {ret:+.1f}%")
+for ct, cl, ret, ret4 in cands:
+    print(f"  {dt(ct):%d %b %Y %H:%M} إغلاق {cl} · حركة الساعة {ret:+.1f}% · 4 ساعات {ret4:+.1f}%")
 if not cands:
     raise SystemExit("لا تطابق")
-ct = min(cands, key=lambda c: abs(c[2] + 28.1))[0] if len(cands) > 1 else cands[0][0]
+ct = min(cands, key=lambda c: abs(c[2] - EXP1) + abs(c[3] - EXP4))[0]
 hh, mm, ss = (int(x) for x in SECOND.split(":"))
 alert = dt(ct).replace(hour=hh, minute=mm, second=ss) - timedelta(hours=4)
 a0 = int(alert.timestamp())
