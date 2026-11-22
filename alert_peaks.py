@@ -77,3 +77,6 @@ print(f"\nالحصيلة ({len(ok)} تنبيهاً): الارتفاع حتى أ�
 print(f"الفرق بين السعر الآن وسعر التنبيه: وسيط {st.median(nowd):+.1f}% · فوق سعر التنبيه الآن: {sum(1 for d in nowd if d>0)} من {len(ok)}")
 hrs = [(r["peak_t"] - r["a0"]) / 3600 for r in ok]
 print(f"زمن الوصول لأعلى سعر: وسيط {st.median(hrs):.0f} ساعة ({st.median(hrs)/24:.1f} يوم) · خلال 24 ساعة: {sum(1 for h in hrs if h<=24)} · خلال 3 أيام: {sum(1 for h in hrs if h<=72)}")
+
+import json
+print("JSON:" + json.dumps([{"sym": r["sym"], "a0": r["a0"], "price": r["price"], "peak": r["peak"], "peak_t": r["peak_t"], "now": r["now"], "prob": r["prob"]} for r in ok]))
