@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: (python3 alert_find.py CLAUDIA_USDT 0.002848 11 0.002866 11:02:48 -7.3 -10.6; echo; echo =========; python3 alert_table.py) 2>&1 | tee scan.txt | tail -70
+        run: python3 coin_pmo.py BLESS 2>&1 | tee scan.txt | tail -60
       - name: Publish
         if: always()
         run: |
