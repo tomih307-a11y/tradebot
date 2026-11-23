@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: python3 find_index.py 2>&1 | tee scan.txt | tail -40
+        run: (python3 index_analysis.py SPX500_USDT; echo; echo ========; python3 find_index.py | grep -E "^(SPY_USDT|NAS100_USDT|US30_USDT|QQQSTOCK)") 2>&1 | tee scan.txt | tail -90
       - name: Publish
         if: always()
         run: |
