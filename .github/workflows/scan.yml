@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: python3 coin_pmo.py SPX 2>&1 | tee scan.txt | tail -60
+        run: python3 find_index.py 2>&1 | tee scan.txt | tail -40
       - name: Publish
         if: always()
         run: |
