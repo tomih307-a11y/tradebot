@@ -72,26 +72,40 @@ def work(sym):
         r1 = r0 and v1[i] >= 3 * (vmed or 1e-12)
         r2 = r1 and price / max(h1["high"][i - 168:i + 1]) - 1 <= -0.10
         flags = {"R0": r0, "R1": r1, "R2": r2, "B": True}
-        # path on 15m candles after the entry
-        stop_j = next((k for k in range(j + 1, j + 193) if lo15[k] <= price * (1 - STOP / 100)), None)
+        # sequential simulation on 15m candles after the entry; stop checked first inside a candle (conservative)
+        def run(policy):
+            stop_lvl = -STOP
+            nxt = 0
+            exits = [None] * 6
+            hit1 = None
+            for k in range(j + 1, j + 193):
+                if lo15[k] <= price * (1 + stop_lvl / 100):
+                    for n in range(nxt, 6):
+                        exits[n] = stop_lvl
+                    return exits, hit1, True
+                while nxt < 6 and hi15[k] >= price * (1 + TPS[nxt] / 100):
+                    exits[nxt] = TPS[nxt]
+                    if nxt == 0:
+                        hit1 = k
+                    if policy == 2 and nxt == 0:
+                        stop_lvl = 0.0                              # stop to entry after TP1
+                    if policy == 3:
+                        stop_lvl = 0.0 if nxt == 0 else TPS[nxt - 1]  # stop to the previous TP after each TP
+                    nxt += 1
+            for n in range(nxt, 6):
+                exits[n] = (end_px / price - 1) * 100
+            return exits, hit1, False
         end_px = c15[j + 192]
-        tp_j = []
-        for tp in TPS:
-            k = next((k for k in range(j + 1, j + 193) if hi15[k] >= price * (1 + tp / 100)), None)
-            tp_j.append(k if (k is not None and (stop_j is None or k < stop_j)) else None)
-        res = []
-        for n, tp in enumerate(TPS):
-            if tp_j[n] is not None:
-                res.append(tp)
-            elif stop_j is not None:
-                res.append(-STOP)
-            else:
-                res.append((end_px / price - 1) * 100)
-        pos = np.mean(res) - COST
+        r1, h1_, st1 = run(1)
+        r2, _, _ = run(2)
+        r3, _, _ = run(3)
+        p1, p2, p3 = (np.mean(r) - COST for r in (r1, r2, r3))
+        tp_hit = [exits_ is not None and exits_ == TPS[n] for n, exits_ in enumerate(r1)]
+        stop_before_tp1 = st1 and r1[0] == -STOP
         for k, f in flags.items():
             if f and i - last[k] >= 12:
                 last[k] = i
-                rows.append((k, tc, [t is not None for t in tp_j], stop_j is not None and (tp_j[0] is None), pos, sym))
+                rows.append((k, tc, tp_hit, stop_before_tp1, (p1, p2, p3), sym))
     return rows
 
 
@@ -103,25 +117,28 @@ with ThreadPoolExecutor(4) as ex:
 rng = np.random.default_rng(0)
 half = np.median([r[1] for r in rows])
 print(f"{len(tick)} عملة · شموع الساعة · 20 أغسطس → الآن · الدخول عند إغلاق الساعة · وقف -5% · أهداف +3/+6.4/+9.8/+13.2/+16.6/+20% · أفق 48 ساعة · تكلفة 0.2%")
-print(f"\n{'القاعدة':44s} {'إشارات':>7s} | " + " ".join(f"{'TP'+str(n):>5s}" for n in range(1, 7)) + f" | {'وقف قبل TP1':>11s} | {'متوسط المركز %':>13s} {'×20 (هامش)':>11s} {'ثقة 95% (أسابيع)':>17s} | {'نصف1':>6s} {'نصف2':>6s}")
-names = {"B": "الأساس: كل إغلاق ساعة", "R0": "R0: اختراق المتوسطات (15د + ساعة) حديث", "R1": "R1: R0 + حجم آخر ساعة ≥3× المعتاد", "R2": "R2: R1 + ≥10% تحت قمة 7 أيام"}
+print(f"\n{'القاعدة':40s} {'إشارات':>7s} | " + " ".join(f"{'TP'+str(n):>5s}" for n in range(1, 7)) + f" | {'وقف قبل TP1':>11s} | متوسط المركز % (×20 على الهامش): {'1) وقف 5% ثابت':>18s} {'2) وقف للدخول بعد TP1':>22s} {'3) وقف يلحق الأهداف':>20s}")
+names = {"B": "الأساس: كل إغلاق ساعة", "R0": "R0: اختراق المتوسطات (15د+ساعة) حديث", "R1": "R1: R0 + حجم آخر ساعة ≥3×", "R2": "R2: R1 + ≥10% تحت قمة 7 أيام"}
 for k in ("B", "R0", "R1", "R2"):
     g = [r for r in rows if r[0] == k]
     if len(g) < 30:
-        print(f"{names[k]:44s} {len(g):7d}"); continue
+        print(f"{names[k]:40s} {len(g):7d}"); continue
     tp = np.array([r[2] for r in g]).mean(axis=0) * 100
     stp = np.mean([r[3] for r in g]) * 100
-    pos = np.array([r[4] for r in g]); ts = np.array([r[1] for r in g])
-    wk = {}
-    for tt, rr in zip(ts, pos):
-        wk.setdefault(tt // (7 * 86400), []).append(rr)
-    ks = list(wk)
-    sm = np.array([sum(wk[x]) for x in ks]); cn = np.array([len(wk[x]) for x in ks])
-    bs = [sm[ix].sum() / cn[ix].sum() for ix in (rng.integers(0, len(ks), len(ks)) for _ in range(300))]
-    print(f"{names[k]:44s} {len(g):7d} | " + " ".join(f"{x:4.0f}%" for x in tp) + f" | {stp:10.0f}% | {pos.mean():+12.2f}% {pos.mean()*20:+10.0f}% [{np.percentile(bs,2.5):+5.2f},{np.percentile(bs,97.5):+5.2f}] | {pos[ts<half].mean():+5.2f} {pos[ts>=half].mean():+5.2f}")
+    P = np.array([r[4] for r in g]); ts = np.array([r[1] for r in g])
+    def ci(col):
+        wk = {}
+        for tt, rr in zip(ts, P[:, col]):
+            wk.setdefault(tt // (7 * 86400), []).append(rr)
+        ks = list(wk)
+        sm = np.array([sum(wk[x]) for x in ks]); cn = np.array([len(wk[x]) for x in ks])
+        bs = [sm[ix].sum() / cn[ix].sum() for ix in (rng.integers(0, len(ks), len(ks)) for _ in range(300))]
+        return f"{P[:, col].mean():+.2f}% ({P[:, col].mean()*20:+.0f}%) [{np.percentile(bs,2.5):+.2f},{np.percentile(bs,97.5):+.2f}]"
+    print(f"{names[k]:40s} {len(g):7d} | " + " ".join(f"{x:4.0f}%" for x in tp) + f" | {stp:10.0f}% | {ci(0):>30s} {ci(1):>30s} {ci(2):>30s}")
+    print(f"{'':40s} {'':7s}   نصفا الفترة (سياسة 2): {P[ts<half][:,1].mean():+.2f}% / {P[ts>=half][:,1].mean():+.2f}%")
 g = [r for r in rows if r[0] == "R1"]
 bc = {}
 for r in g:
-    bc[r[5]] = bc.get(r[5], 0) + r[4]
+    bc[r[5]] = bc.get(r[5], 0) + r[4][1]
 tot = sum(bc.values())
 print("\nتركّز العملات (R1): " + (", ".join(f"{k[:-5]} {v/tot*100:.0f}%" for k, v in sorted(bc.items(), key=lambda kv: -kv[1])[:6]) if tot > 0 else "المجموع سالب") + f" | عدد العملات: {len(bc)}")
