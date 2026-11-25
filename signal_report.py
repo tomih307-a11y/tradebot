@@ -42,7 +42,7 @@ def kl(itv, days, cut=None):
 
 
 h1_all = kl("Min60", 21)
-cands = [h1_all["time"][i] + 3600 for i in range(len(h1_all["time"])) if abs(h1_all["close"][i] / ENTRY - 1) <= 0.005]
+cands = [h1_all["time"][i] + 3600 for i in range(len(h1_all["time"])) if abs(h1_all["close"][i] / ENTRY - 1) <= 0.005 and h1_all["time"][i] + 3600 <= now]    # closed candles only
 print(f"{SYM}: شموع ساعة أغلقت ضمن ±0.5% من الدخول {ENTRY} خلال 21 يوماً: {len(cands)}" + (f" · الأحدث: {dt4(cands[-1]):%d %b %H:%M}" if cands else ""))
 if not cands:
     raise SystemExit("لا مطابقة")
@@ -61,6 +61,8 @@ for i in idx:
     for n, tp in enumerate(TPS, 1):
         if n not in hit and m["high"][i] >= tp and (st_t is None or m["time"][i] < st_t):
             hit[n] = m["time"][i]
+if not idx:
+    print("لا شموع دقيقة بعد لحظة الإشارة بعد"); idx = [len(m["time"]) - 1]
 mx = max(idx, key=lambda i: m["high"][i]); mn = min(idx, key=lambda i: m["low"][i])
 print(f"== المتابعة · السعر الآن {last} ({(last/ENTRY-1)*100:+.2f}% عن الدخول) · وقف {STOP} ({(STOP/ENTRY-1)*100:+.2f}%)")
 for n, tp in enumerate(TPS, 1):
