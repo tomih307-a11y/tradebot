@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan
-        run: python3 ma_check.py 2>&1 | tee scan.txt | tail -60
+        run: pip install -q numpy && python3 channel_rule_test.py 2>&1 | tee scan.txt | tail -40
       - name: Publish
         if: always()
         run: |
