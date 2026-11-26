@@ -1,0 +1,33 @@
+name: spike
+on:
+  schedule:
+    - cron: "11 * * * *"
+  push:
+    branches: [claude/pmo-zero-crossing-strategy-tzs5l3]
+    paths: [".github/run-spike.txt"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: spike
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore state
+        run: |
+          git fetch origin spike-results:sr 2>/dev/null && git show sr:spike.json > spike.json 2>/dev/null || rm -f spike.json
+      - name: Spike
+        run: pip install -q numpy && python3 spike_live.py
+      - name: Publish
+        if: always()
+        run: |
+          mkdir /tmp/out && cp spike.json spike.txt /tmp/out/ 2>/dev/null || true
+          cd /tmp/out && git init -q && git checkout -q -b spike-results
+          git config user.name "bot" && git config user.email "bot@example.com"
+          git add -A && git commit -q -m "spike" || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin spike-results
