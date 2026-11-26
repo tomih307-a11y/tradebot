@@ -7,7 +7,7 @@ import luxalgo_ob as LX
 import scanner as S
 
 U = lambda y, mo, d, h: int((datetime(y, mo, d, h, tzinfo=timezone.utc) - timedelta(hours=4)).timestamp())
-SIG = [("AT_USDT", U(2026, 11, 25, 21), 0.0544, 0.0517), ("MOODENG_USDT", U(2026, 11, 25, 21), 0.02792, 0.02652), ("EVAA_USDT", U(2026, 11, 25, 22), 2.785, 2.646)]
+SIG = [("AT_USDT", U(2026, 11, 25, 21), 0.0544, 0.0517), ("MOODENG_USDT", U(2026, 11, 25, 21), 0.02792, 0.02652), ("EVAA_USDT", U(2026, 11, 25, 22), 2.785, 2.646), ("ELSA_USDT", U(2026, 11, 26, 13), 0.09577, 0.09098)]
 now = int(time.time())
 SEC = {"Min15": 900, "Min60": 3600, "Hour4": 14400, "Day1": 86400}
 dt4 = lambda x: datetime.fromtimestamp(x, timezone.utc) + timedelta(hours=4)
