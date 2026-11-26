@@ -13,11 +13,11 @@ u4 = lambda x: (datetime.fromtimestamp(x, timezone.utc) + timedelta(hours=4)).st
 SIG = [
     ("CYS", 0.0609 / 1.132, {4: R(24, 1, 26)}, 72, "latest", None, True),
     ("AIOT", 0.07409 / 1.03, {1: R(24, 2, 35), 2: R(24, 7, 2), 3: R(24, 9, 35), 4: R(24, 12, 2), 5: R(24, 12, 31), 6: R(24, 12, 41)}, 72, "latest", None, True),
-    ("LISTA", 0.10771, {1: R(24, 16, 7), 2: R(24, 16, 17), 3: R(25, 19, 22), 4: R(25, 19, 24)}, 14, "earliest", None, False),
+    ("LISTA", 0.10771, {1: R(24, 16, 7), 2: R(24, 16, 17), 3: R(25, 19, 22), 4: R(25, 19, 24)}, 24, "earliest", None, False),
     ("BTW", 0.787 / 1.132, {4: R(24, 22, 19), 5: R(25, 2, 11), 6: R(25, 6, 13)}, 72, "latest", None, True),
     ("MOODENG", 0.02792, {1: R(25, 13, 17), 3: R(25, 13, 24), 4: R(25, 13, 27), 6: R(25, 13, 28)}, 6, "latest", None, False),
     ("AT", 0.0544, {1: R(25, 20, 10), 2: R(25, 20, 17), 3: R(25, 20, 28), 5: R(25, 20, 48), 6: R(25, 20, 50)}, 6, "latest", None, False),
-    ("EVAA", 2.785, {1: R(26, 0, 54), 2: R(26, 9, 13), 3: R(26, 9, 20)}, 10, "earliest", None, False),
+    ("EVAA", 2.785, {1: R(26, 0, 54), 2: R(26, 9, 13), 3: R(26, 9, 20)}, 24, "earliest", None, False),
     ("ELSA", 0.09577, {}, 0, "latest", None, False),
 ]
 
@@ -57,14 +57,20 @@ for name, entry, claims, win, mode, fixed, inferred in SIG:
     cand = [(h1["time"][i] + 3600, abs(h1["close"][i] / entry - 1)) for i in range(len(h1["time"])) if a <= h1["time"][i] + 3600 <= b]
     if not cand:
         print(f"== {name}: لا شموع"); continue
-    near = [c for c in cand if c[1] <= 0.007]
+    m_all = kl(sym, "Min1", a - 3600, now, 60)
+    fc = first_claim or now
+
+    def stop_before(t0, tend):
+        return any(m_all["low"][i] <= stop for i in range(len(m_all["time"])) if t0 <= m_all["time"][i] < tend)
+
+    near = [c for c in cand if c[1] <= 0.01 and not stop_before(c[0], fc)]
+    note = ""
     if near:
         t0 = (min(near) if mode == "earliest" else max(near))[0]
-        note = ""
     else:
         t0 = min(cand, key=lambda c: c[1])[0]
         note = " (لا إغلاق قريب من الدخول، أقرب إغلاق)"
-    m = kl(sym, "Min1", t0 - 60, now, 60)
+    m = {k: [v for tt, v in zip(m_all["time"], m_all[k]) if tt >= t0 - 60] for k in m_all}
     idx = [i for i in range(len(m["time"])) if m["time"][i] >= t0]
     h4 = kl(sym, "Hour4", t0 - 4 * 3600, now, 14400)
     # stop by wick
@@ -86,6 +92,14 @@ for name, entry, claims, win, mode, fixed, inferred in SIG:
         diff = f"{(t - ct) / 60:+.0f}د" if t else "لم يتحقق"
         print(f"   مقارنة TP{n}: المعلن {u4(ct)} · الفعلي {u4(t) if t else '—'} · فرق {diff}")
     print(f"   أدنى سعر {(lo/entry-1)*100:+.2f}% · أعلى {(mx/entry-1)*100:+.2f}% · وقف بالفتيل: {u4(wick) if wick else 'لا'} · وقف بإغلاق 4س: {u4(c4) if c4 else 'لا'} · الآن {(m['close'][-1]/entry-1)*100:+.2f}%\n")
+# MOODENG spot check (claimed TP4..TP6 at 13:27-13:28 Riyadh = 14:27-14:28 UTC+4, 25 Nov)
+try:
+    st = int(datetime(2026, 11, 25, 10, 0, tzinfo=timezone.utc).timestamp()) * 1000
+    d = S.get(f"https://api.mexc.com/api/v3/klines?symbol=MOODENGUSDT&interval=1m&startTime={st}&endTime={st + 60 * 60 * 1000}&limit=100")
+    hi = max(float(x[2]) for x in d)
+    print(f"سبوت MOODENG بين 14:00 و15:00 (UTC+4) 25 نوفمبر: أعلى سعر {hi} ({(hi/0.02792-1)*100:+.2f}%) · هدف TP4 {0.02792*1.132:.5f} · TP6 {0.02792*1.2:.5f}")
+except Exception as e:
+    print("سبوت MOODENG: فشل الجلب", str(e)[:80])
 print("== ملخص (الأهداف قبل إغلاق 4س تحت الوقف)")
 done = [r for r in rows if r[0] != "ELSA"]
 for name, entry, t0, k, wick, c4, lo, mx in rows:
