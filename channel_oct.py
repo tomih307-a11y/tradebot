@@ -47,13 +47,35 @@ def kl(sym, itv, a, b, step):
     return out
 
 
+def kl_spot(sym, itv, a, b, step):
+    out = {k: [] for k in ("time", "high", "low", "close")}
+    while a < b:
+        e = min(a + step * 1000, b)
+        d = None
+        for r in range(4):
+            try:
+                d = S.get(f"https://api.mexc.com/api/v3/klines?symbol={sym}&interval={itv}&startTime={a*1000}&endTime={e*1000}&limit=1000"); break
+            except Exception:
+                time.sleep(1.5 + r)
+        for x in d or []:
+            out["time"].append(int(x[0]) // 1000); out["high"].append(float(x[2])); out["low"].append(float(x[3])); out["close"].append(float(x[4]))
+        a = e
+    return out
+
+
 res = []
 for name, t0, entry, stop, tps, tf in SIG:
     sym = name + "_USDT"
     end = min(now, t0 + 7 * 86400)
-    m, step = kl(sym, "Min1", t0 - 1800, end, 60), 60
-    if len(m["time"]) < 0.8 * (end - t0 + 1800) / 60:
-        m, step = kl(sym, "Min5", t0 - 1800, end, 300), 300
+    fut = name == "TIA"
+    if fut:
+        m, step = kl(sym, "Min1", t0 - 1800, end, 60), 60
+        if len(m["time"]) < 0.8 * (end - t0 + 1800) / 60:
+            m, step = kl(sym, "Min5", t0 - 1800, end, 300), 300
+    else:
+        m, step = kl_spot(name + "USDT", "1m", t0 - 1800, end, 60), 60
+        if len(m["time"]) < 0.8 * (end - t0 + 1800) / 60:
+            m, step = kl_spot(name + "USDT", "5m", t0 - 1800, end, 300), 300
     if not m["time"]:
         print(f"== {name} {r3(t0)}: لا بيانات\n"); continue
     T = m["time"]
@@ -81,7 +103,7 @@ for name, t0, entry, stop, tps, tf in SIG:
     ex = (tc[1] / entry - 1) * 100 if tc else (m["close"][post[-1]] / entry - 1) * 100
     pos = (sum((tp / entry - 1) * 100 for tp, x in zip(tps, reach) if x) + (len(tps) - k) * ex) / len(tps)
     res.append((name, k, len(tps), tc is not None, pos, wick is not None))
-    print(f"== {name} · نُشرت {r3(t0)} · دخول {entry} · وقف {stop} ({tf}) · بيانات {'1د' if step == 60 else '5د'}")
+    print(f"== {name} · نُشرت {r3(t0)} · دخول {entry} · وقف {stop} ({tf}) · بيانات {'عقود' if fut else 'سبوت'} {'1د' if step == 60 else '5د'}")
     print(f"   السعر لحظة النشر {px:.6g} ({(px/entry-1)*100:+.2f}% عن الدخول){' · TP1 كان قد تحقق قبل النشر!' if late else ''}")
     print(f"   الأهداف قبل وقف الإغلاق: {k}/{len(tps)} · أوقاتها: " + ", ".join(f"TP{i+1} {r3(x)}" for i, x in enumerate(reach) if x))
     print(f"   وقف بإغلاق {tf}: {('نعم ' + r3(tc[0]) + f' عند {tc[1]:.6g} ({ex:+.2f}%)') if tc else 'لا'} · وقف بالفتيل: {r3(wick) if wick else 'لا'} · أدنى سعر {(lo/entry-1)*100:+.2f}% · نتيجة المركز (شرائح متساوية) {pos:+.2f}%\n")
