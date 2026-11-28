@@ -14,6 +14,7 @@ SIGNALS = [
     ("BTW_USDT", U(2026, 11, 28, 8), 1.1973, 1.1374, [round(1.1973 * (1 + x / 100), 4) for x in (3, 6, 9.5, 13, 16.5, 20)]),
     ("BTW_USDT", U(2026, 11, 28, 9), 1.2296, 1.1681, [round(1.2296 * (1 + x / 100), 4) for x in (3, 6, 9.5, 13, 16.5, 20)]),
     ("PORTAL_USDT", U(2026, 11, 28, 18), 0.01557, 0.01479, [0.01604, 0.01657, 0.0171, 0.01763, 0.01815, 0.01868]),
+    ("PORTAL_USDT", U(2026, 11, 28, 18), 0.01557, 0.01401, [0.01713, 0.02024, 0.02336, 0.02647, 0.02958, 0.0327, 0.03581, 0.03893]),
 ]
 now = int(time.time())
 dt4 = lambda x: datetime.fromtimestamp(x, timezone.utc) + timedelta(hours=4)
@@ -64,6 +65,6 @@ for sym, t0, entry, stop, tps in SIGNALS:
                 hit[n] = m["time"][i]
     mx = max(idx, key=lambda i: m["high"][i]); mn = min(idx, key=lambda i: m["low"][i])
     print(f"== {sym[:-5]} · إشارة {dt4(t0):%d %b %H:%M} (مرّ {(now-t0)/3600:.1f}س) · دخول {entry} · وقف {stop} · الآن {last} ({(last/entry-1)*100:+.2f}%)")
-    print("   الأهداف: " + " | ".join(f"TP{n} {'✔ ' + dt4(hit[n]).strftime('%H:%M') + ' (' + str(round((hit[n]-t0)/60)) + 'د)' if n in hit else '✘'}" for n in range(1, 7)))
+    print("   الأهداف: " + " | ".join(f"TP{n} {'✔ ' + dt4(hit[n]).strftime('%H:%M') + ' (' + str(round((hit[n]-t0)/60)) + 'د)' if n in hit else '✘'}" for n in range(1, len(tps) + 1)))
     print("   الوقف: " + (f"ضُرب {dt4(st_t):%d %b %H:%M} (بعد {(st_t-t0)/60:.0f} دقيقة)" if st_t else "لم يُضرب"))
     print(f"   أعلى سعر {m['high'][mx]:.6g} ({(m['high'][mx]/entry-1)*100:+.2f}%) {dt4(m['time'][mx]):%d %H:%M} · أدنى {m['low'][mn]:.6g} ({(m['low'][mn]/entry-1)*100:+.2f}%) {dt4(m['time'][mn]):%d %H:%M}\n")
